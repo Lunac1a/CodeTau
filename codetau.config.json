@@ -1,0 +1,8 @@
+{
+  "database": ".codetau/codetau.db",
+  "model": "gpt-5-mini",
+  "baseUrl": "https://api.openai.com/v1",
+  "commandAllowlist": ["node", "node.exe", "npm", "npm.cmd", "pnpm", "pnpm.cmd", "python", "python.exe", "pytest", "pytest.exe"],
+  "commandTimeoutMs": 30000,
+  "maxOutputBytes": 100000
+}

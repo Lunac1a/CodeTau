@@ -1,0 +1,21 @@
+{
+  "name": "codetau-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.5.3",
+  "bin": {
+    "codetau": "./src/cli.ts"
+  },
+  "scripts": {
+    "start": "node src/cli.ts",
+    "test": "node --test --test-isolation=none test/*.test.ts",
+    "eval:mini": "node src/cli.ts eval mini --runs 5 --seed 42"
+  },
+  "engines": {
+    "node": ">=22.6"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0"
+  }
+}
