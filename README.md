@@ -35,7 +35,7 @@ packages/persistence/  SQLite event store and replay
 packages/bench/        CodeTau-Bench Mini runner and metrics
 python/tau_bridge/     official tau-bench integration boundary
 specs/                 SDD specs, schemas, and decisions
-src/                   initial executable core skeleton
+src/                   your learning implementation starts here
 test/                  TypeScript unit and integration tests
 ```
 
@@ -47,4 +47,5 @@ test/                  TypeScript unit and integration tests
 4. Add the CLI, then CodeTau-Bench Mini.
 5. Pin and integrate an official Tau benchmark version through the Python bridge.
 
-No API key is needed for the current skeleton.
+The implementation directories are intentionally empty so the agent loop can be
+built from first principles. No API key is needed at this stage.
