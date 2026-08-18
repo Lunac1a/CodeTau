@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codetau.local/schemas/task-spec-v1.json",
+  "title": "CodeTau task spec frontmatter",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "id", "goal", "workspace", "policy", "acceptance", "phases", "budget"],
+  "properties": {
+    "version": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "goal": { "type": "string", "minLength": 1 },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "allowedPaths"],
+      "properties": {
+        "root": { "type": "string", "minLength": 1 },
+        "allowedPaths": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["forbiddenActions"],
+      "properties": {
+        "forbiddenActions": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "acceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commands", "assertions"],
+      "properties": {
+        "commands": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["executable", "args"],
+            "properties": {
+              "executable": { "type": "string", "minLength": 1 },
+              "args": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "assertions": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "phases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "description"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$" },
+          "description": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxModelTurns", "maxToolCalls", "maxRetries"],
+      "properties": {
+        "maxModelTurns": { "type": "integer", "minimum": 1 },
+        "maxToolCalls": { "type": "integer", "minimum": 0 },
+        "maxRetries": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "userInteraction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowQuestions", "approvalResponses"],
+      "properties": {
+        "allowQuestions": { "type": "boolean" },
+        "approvalResponses": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["allow-once", "allow-session", "deny"] }
+        }
+      }
+    },
+    "hiddenAssertionsRef": { "type": "string", "minLength": 1 }
+  }
+}
