@@ -9,54 +9,56 @@ export type TaskStatus =
     | "blocked";
 
 export type ToolCall = {
-    id: string;
-    name: string;
-    input: unknown;
+    readonly id: string;
+    readonly name: string;
+    readonly input: unknown;
 };
 
 export type ToolResult =
     | {
-        ok: true;
-        output: unknown;
+        readonly ok: true;
+        readonly output: unknown;
       }
     | {
-        ok: false;
-        error: {
-            code: string;
-            message: string;
-            details?: unknown;
+        readonly ok: false;
+        readonly error: {
+            readonly code: string;
+            readonly message: string;
+            readonly details?: unknown;
         };
       };
 
-type EventBase = {
-    id: string;
-    sessionId: string;
-    timestamp: string;
+export type EventBase = {
+    readonly id: string;
+    readonly sessionId: string;
+    readonly sequence: number;
+    readonly timestamp: string;
 };
 
 export type AgentEvent =
     | (EventBase & {
-        type: "session_started";
-        specPath: string;
+        readonly type: "session_started";
+        readonly specId: string;
+        readonly specPath: string;
       })
     | (EventBase & {
-        type: "state_changed";
-        from: TaskStatus;
-        to: TaskStatus;
-        reason: string;
-        sourceEventId: string;
+        readonly type: "state_changed";
+        readonly from: TaskStatus;
+        readonly to: TaskStatus;
+        readonly reason: string;
+        readonly sourceEventId: string;
       })
     | (EventBase & {
-        type: "model_tool_call";
-        toolCall: ToolCall;
+        readonly type: "model_tool_call";
+        readonly toolCall: ToolCall;
       })
     | (EventBase & {
-        type: "tool_result";
-        toolCallId: string;
-        result: ToolResult;
+        readonly type: "tool_result";
+        readonly toolCallId: string;
+        readonly result: ToolResult;
       })
     | (EventBase & {
-        type: "final";
-        status: "completed" | "failed" | "blocked";
-        message: string;
+        readonly type: "final";
+        readonly status: "completed" | "failed" | "blocked";
+        readonly message: string;
       });
