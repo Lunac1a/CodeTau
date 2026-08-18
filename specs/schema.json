@@ -4,7 +4,7 @@
   "title": "CodeTau task spec frontmatter",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "id", "goal", "workspace", "policy", "acceptance", "phases", "budget"],
+  "required": ["version", "id", "goal", "workspace", "policy", "acceptance", "phases", "budget", "userInteraction"],
   "properties": {
     "version": { "const": 1 },
     "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },

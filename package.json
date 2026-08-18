@@ -8,7 +8,7 @@
     "node": ">=22.6"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --test --test-isolation=none test/state.test.ts test/model.test.ts test/spec-schema.test.ts",
+    "test": "node --experimental-strip-types --test --test-isolation=none test/state.test.ts test/model.test.ts test/spec-schema.test.ts test/spec-loader.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

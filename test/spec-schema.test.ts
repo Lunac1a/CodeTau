@@ -19,5 +19,6 @@ test("task spec schema is valid JSON and closes unknown fields", async () => {
         "acceptance",
         "phases",
         "budget",
+        "userInteraction",
     ]);
 });
