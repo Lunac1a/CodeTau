@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 
 import { parseDocument } from "yaml";
 
+import { computeSpecDigest, createSpecSnapshot } from "./digest.ts";
 import { SpecLoadError } from "./errors.ts";
 import type { LoadedSpec } from "./types.ts";
 import { validateSpecContract } from "./validator.ts";
@@ -81,10 +82,12 @@ export async function parseSpecText(
         });
     }
 
+    const contract = await validateSpecContract(value, sourcePath);
     return {
         sourcePath,
-        contract: await validateSpecContract(value, sourcePath),
+        contract,
         context,
+        digest: computeSpecDigest(createSpecSnapshot(contract, context)),
     };
 }
 

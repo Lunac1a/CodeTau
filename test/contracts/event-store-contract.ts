@@ -5,19 +5,21 @@ import { rebuildTaskState } from "../../src/events.ts";
 import type { EventStoreFactory } from "../../src/persistence/event-store.ts";
 import { EventStoreError } from "../../src/persistence/errors.ts";
 import type { AgentEvent } from "../../src/types.ts";
+import { createSessionStartedEvent, createTestSpec } from "../fixtures/spec.ts";
 
 const timestamp = "2026-08-19T00:00:00.000Z";
 
 function startEvent(sessionId: string, eventId: string): AgentEvent {
-    return {
-        id: eventId,
+    const spec = createTestSpec({
+        id: `spec.${sessionId}`,
+        sourcePath: `specs/${sessionId}.md`,
+    });
+    return createSessionStartedEvent({
+        eventId,
         sessionId,
-        sequence: 1,
+        spec,
         timestamp,
-        type: "session_started",
-        specId: `spec.${sessionId}`,
-        specPath: `specs/${sessionId}.md`,
-    };
+    });
 }
 
 function analyzingEvent(sessionId: string, eventId: string, sourceId: string): AgentEvent {

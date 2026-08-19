@@ -314,6 +314,11 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<TaskSt
         type: "session_started",
         specId: options.spec.contract.id,
         specPath: options.spec.sourcePath,
+        specDigest: options.spec.digest,
+        specSnapshot: {
+            contract: options.spec.contract,
+            context: options.spec.context,
+        },
     });
     await writer.changeState(
         "analyzing",
@@ -345,7 +350,7 @@ export async function resumeAgentLoop(options: RunAgentLoopOptions): Promise<Tas
     const state = rebuildTaskState(events);
     if (
         state.specId !== options.spec.contract.id ||
-        state.specPath !== options.spec.sourcePath
+        state.specDigest !== options.spec.digest
     ) {
         throw new AgentLoopError({
             code: "session_spec_mismatch",

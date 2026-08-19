@@ -34,8 +34,14 @@ export type TaskSpecContract = {
     hiddenAssertionsRef?: string;
 };
 
+export type SpecSnapshot = {
+    contract: TaskSpecContract;
+    context: string;
+};
+
 export type LoadedSpec = {
     sourcePath: string;
     contract: TaskSpecContract;
     context: string;
+    digest: string;
 };

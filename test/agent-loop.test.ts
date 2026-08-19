@@ -11,41 +11,14 @@ import { InMemoryEventStore } from "../src/persistence/in-memory-event-store.ts"
 import type { LoadedSpec } from "../src/spec/types.ts";
 import type { AgentEvent } from "../src/types.ts";
 import { FakeModelProvider } from "./fakes/fake-model.ts";
+import { createSessionStartedEvent, createTestSpec } from "./fixtures/spec.ts";
 
 function createSpec(maxModelTurns = 3): LoadedSpec {
-    return {
-        sourcePath: "C:\\workspace\\specs\\test.md",
+    return createTestSpec({
+        id: "test.minimal-loop",
         context: "Analyze the task and report whether it can continue.",
-        contract: {
-            version: 1,
-            id: "test.minimal-loop",
-            goal: "Exercise the minimal Agent loop.",
-            workspace: {
-                root: "fixtures/example",
-                allowedPaths: ["src/**"],
-            },
-            policy: {
-                forbiddenActions: ["network-access"],
-            },
-            acceptance: {
-                commands: [{ executable: "pnpm", args: ["test"] }],
-                assertions: ["All tests pass."],
-            },
-            phases: [
-                { id: "analyze", description: "Analyze the task." },
-                { id: "validate", description: "Validate the result." },
-            ],
-            budget: {
-                maxModelTurns,
-                maxToolCalls: 10,
-                maxRetries: 1,
-            },
-            userInteraction: {
-                allowQuestions: false,
-                approvalResponses: ["allow-once", "allow-session", "deny"],
-            },
-        },
-    };
+        maxModelTurns,
+    });
 }
 
 function createRuntime(prefix = "event"): AgentLoopRuntime {
@@ -189,15 +162,17 @@ test("rejects an unvalidated model completion claim", async () => {
 
 test("refuses to overwrite an existing session", async () => {
     const store = new InMemoryEventStore();
-    await store.append({
-        id: "existing-event",
-        sessionId: "session-existing",
-        sequence: 1,
-        timestamp: "2026-08-19T00:00:00.000Z",
-        type: "session_started",
-        specId: "test.existing",
-        specPath: "specs/existing.md",
-    });
+    await store.append(
+        createSessionStartedEvent({
+            eventId: "existing-event",
+            sessionId: "session-existing",
+            spec: createTestSpec({
+                id: "test.existing",
+                sourcePath: "specs/existing.md",
+            }),
+            timestamp: "2026-08-19T00:00:00.000Z",
+        }),
+    );
 
     try {
         await assert.rejects(
@@ -224,15 +199,12 @@ test("resumes an analyzing session with rebuilt message history", async () => {
     const store = new InMemoryEventStore();
     const spec = createSpec();
     const historicalEvents: AgentEvent[] = [
-        {
-            id: "history-1",
+        createSessionStartedEvent({
+            eventId: "history-1",
             sessionId: "session-resume",
-            sequence: 1,
+            spec,
             timestamp: "2026-08-19T00:00:00.000Z",
-            type: "session_started",
-            specId: spec.contract.id,
-            specPath: spec.sourcePath,
-        },
+        }),
         {
             id: "history-2",
             sessionId: "session-resume",
@@ -291,15 +263,12 @@ test("resume preserves the model turn budget already consumed", async () => {
     const store = new InMemoryEventStore();
     const spec = createSpec(2);
     const historicalEvents: AgentEvent[] = [
-        {
-            id: "budget-history-1",
+        createSessionStartedEvent({
+            eventId: "budget-history-1",
             sessionId: "session-resume-budget",
-            sequence: 1,
+            spec,
             timestamp: "2026-08-19T00:00:00.000Z",
-            type: "session_started",
-            specId: spec.contract.id,
-            specPath: spec.sourcePath,
-        },
+        }),
         {
             id: "budget-history-2",
             sessionId: "session-resume-budget",
@@ -355,15 +324,17 @@ test("resume preserves the model turn budget already consumed", async () => {
 
 test("resume rejects a different Spec before calling the model", async () => {
     const store = new InMemoryEventStore();
-    await store.append({
-        id: "mismatch-1",
-        sessionId: "session-mismatch",
-        sequence: 1,
-        timestamp: "2026-08-19T00:00:00.000Z",
-        type: "session_started",
-        specId: "different.spec",
-        specPath: "different/path.md",
-    });
+    await store.append(
+        createSessionStartedEvent({
+            eventId: "mismatch-1",
+            sessionId: "session-mismatch",
+            spec: createTestSpec({
+                id: "different.spec",
+                sourcePath: "different/path.md",
+            }),
+            timestamp: "2026-08-19T00:00:00.000Z",
+        }),
+    );
     const model = new FakeModelProvider([]);
 
     try {
@@ -387,19 +358,55 @@ test("resume rejects a different Spec before calling the model", async () => {
     }
 });
 
+test("resume rejects changed Spec content even when ID and path match", async () => {
+    const store = new InMemoryEventStore();
+    const originalSpec = createSpec();
+    await store.append(
+        createSessionStartedEvent({
+            eventId: "content-mismatch-1",
+            sessionId: "session-content-mismatch",
+            spec: originalSpec,
+            timestamp: "2026-08-19T00:00:00.000Z",
+        }),
+    );
+    const changedSpec = createTestSpec({
+        id: originalSpec.contract.id,
+        sourcePath: originalSpec.sourcePath,
+        context: "This content changed after the Session was created.",
+    });
+    const model = new FakeModelProvider([]);
+
+    try {
+        await assert.rejects(
+            resumeAgentLoop({
+                sessionId: "session-content-mismatch",
+                spec: changedSpec,
+                model,
+                eventStore: store,
+                runtime: createRuntime("content-mismatch-resume"),
+            }),
+            (error: unknown) => {
+                assert.ok(error instanceof AgentLoopError);
+                assert.equal(error.code, "session_spec_mismatch");
+                return true;
+            },
+        );
+        assert.equal(model.requests.length, 0);
+    } finally {
+        await store.close();
+    }
+});
+
 test("resume completes a terminal state that was missing its final event", async () => {
     const store = new InMemoryEventStore();
     const spec = createSpec();
     const interruptedEvents: AgentEvent[] = [
-        {
-            id: "terminal-1",
+        createSessionStartedEvent({
+            eventId: "terminal-1",
             sessionId: "session-terminal-recovery",
-            sequence: 1,
+            spec,
             timestamp: "2026-08-19T00:00:00.000Z",
-            type: "session_started",
-            specId: spec.contract.id,
-            specPath: spec.sourcePath,
-        },
+        }),
         {
             id: "terminal-2",
             sessionId: "session-terminal-recovery",

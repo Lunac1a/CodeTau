@@ -7,26 +7,27 @@ import test from "node:test";
 import { resumeAgentLoop } from "../src/agent-loop/run.ts";
 import { rebuildTaskState } from "../src/events.ts";
 import { SQLiteEventStore } from "../src/persistence/sqlite-event-store.ts";
-import type { LoadedSpec } from "../src/spec/types.ts";
 import type { AgentEvent } from "../src/types.ts";
 import { runEventStoreContract } from "./contracts/event-store-contract.ts";
 import { FakeModelProvider } from "./fakes/fake-model.ts";
+import { createSessionStartedEvent, createTestSpec } from "./fixtures/spec.ts";
 
 runEventStoreContract("SQLiteEventStore", () => new SQLiteEventStore(":memory:"));
 
 test("SQLiteEventStore: restores a session after reopening the database", async () => {
     const directory = await mkdtemp(join(tmpdir(), "codetau-sqlite-"));
     const databasePath = join(directory, "events.db");
+    const spec = createTestSpec({
+        id: "spec.persisted",
+        sourcePath: "specs/persisted.md",
+    });
     const events: AgentEvent[] = [
-        {
-            id: "event-1",
+        createSessionStartedEvent({
+            eventId: "event-1",
             sessionId: "session-persisted",
-            sequence: 1,
+            spec,
             timestamp: "2026-08-19T00:00:00.000Z",
-            type: "session_started",
-            specId: "spec.persisted",
-            specPath: "specs/persisted.md",
-        },
+        }),
         {
             id: "event-2",
             sessionId: "session-persisted",
@@ -62,34 +63,18 @@ test("SQLiteEventStore: restores a session after reopening the database", async 
 test("SQLiteEventStore: resumes the Agent loop after reopening", async () => {
     const directory = await mkdtemp(join(tmpdir(), "codetau-resume-"));
     const databasePath = join(directory, "events.db");
-    const spec: LoadedSpec = {
+    const spec = createTestSpec({
+        id: "test.sqlite-resume",
         sourcePath: "C:\\workspace\\specs\\resume.md",
         context: "Continue the interrupted task.",
-        contract: {
-            version: 1,
-            id: "test.sqlite-resume",
-            goal: "Resume a persisted Agent loop.",
-            workspace: { root: "fixtures/example", allowedPaths: ["src/**"] },
-            policy: { forbiddenActions: ["network-access"] },
-            acceptance: { commands: [], assertions: ["The session resumes."] },
-            phases: [{ id: "analyze", description: "Analyze the task." }],
-            budget: { maxModelTurns: 3, maxToolCalls: 10, maxRetries: 1 },
-            userInteraction: {
-                allowQuestions: false,
-                approvalResponses: ["allow-once", "allow-session", "deny"],
-            },
-        },
-    };
+    });
     const interruptedEvents: AgentEvent[] = [
-        {
-            id: "persisted-1",
+        createSessionStartedEvent({
+            eventId: "persisted-1",
             sessionId: "session-sqlite-resume",
-            sequence: 1,
+            spec,
             timestamp: "2026-08-19T00:00:00.000Z",
-            type: "session_started",
-            specId: spec.contract.id,
-            specPath: spec.sourcePath,
-        },
+        }),
         {
             id: "persisted-2",
             sessionId: "session-sqlite-resume",

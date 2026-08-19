@@ -89,10 +89,18 @@ export class SQLiteEventStore implements EventStore {
                 this.#database
                     .prepare(
                         `INSERT INTO sessions (
-                            session_id, spec_id, spec_path, created_at
-                        ) VALUES (?, ?, ?, ?)`,
+                            session_id, spec_id, spec_path, spec_digest,
+                            spec_snapshot_json, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?)`,
                     )
-                    .run(event.sessionId, event.specId, event.specPath, event.timestamp);
+                    .run(
+                        event.sessionId,
+                        event.specId,
+                        event.specPath,
+                        event.specDigest,
+                        JSON.stringify(event.specSnapshot),
+                        event.timestamp,
+                    );
             }
 
             this.#database
@@ -154,6 +162,8 @@ export class SQLiteEventStore implements EventStore {
                 session_id TEXT PRIMARY KEY,
                 spec_id TEXT NOT NULL,
                 spec_path TEXT NOT NULL,
+                spec_digest TEXT NOT NULL,
+                spec_snapshot_json TEXT NOT NULL,
                 created_at TEXT NOT NULL
             ) STRICT;
 

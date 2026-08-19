@@ -1,3 +1,5 @@
+import type { SpecSnapshot } from "./spec/types.ts";
+
 export type TaskStatus =
     | "created"
     | "analyzing"
@@ -63,6 +65,8 @@ export type AgentEvent =
         readonly type: "session_started";
         readonly specId: string;
         readonly specPath: string;
+        readonly specDigest: string;
+        readonly specSnapshot: SpecSnapshot;
       })
     | (EventBase & {
         readonly type: "state_changed";

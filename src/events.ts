@@ -1,4 +1,5 @@
 import { assertTransition, InvalidTaskTransitionError } from "./state.ts";
+import { computeSpecDigest } from "./spec/digest.ts";
 import type { AgentEvent, TaskStatus } from "./types.ts";
 
 export type TerminalStatus = "completed" | "failed" | "blocked";
@@ -7,6 +8,7 @@ export type TaskState = Readonly<{
     sessionId: string;
     specId: string;
     specPath: string;
+    specDigest: string;
     status: TaskStatus;
     revision: number;
     lastSequence: number;
@@ -24,6 +26,7 @@ export type EventReplayErrorCode =
     | "event_first_invalid"
     | "event_session_mismatch"
     | "event_session_restarted"
+    | "session_spec_digest_invalid"
     | "event_after_final"
     | "event_after_terminal_state"
     | "state_source_invalid"
@@ -166,10 +169,20 @@ export function rebuildTaskState(events: readonly AgentEvent[]): TaskState {
         });
     }
 
+    const computedSpecDigest = computeSpecDigest(first.specSnapshot);
+    if (computedSpecDigest !== first.specDigest) {
+        throw new EventReplayError({
+            code: "session_spec_digest_invalid",
+            message: "Session Spec snapshot does not match its recorded digest",
+            event: first,
+        });
+    }
+
     let state = freezeState({
         sessionId: first.sessionId,
         specId: first.specId,
         specPath: first.specPath,
+        specDigest: first.specDigest,
         status: "created",
         revision: 0,
         lastSequence: first.sequence,

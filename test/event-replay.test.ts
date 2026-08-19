@@ -3,20 +3,22 @@ import test from "node:test";
 
 import { EventReplayError, rebuildTaskState } from "../src/events.ts";
 import type { AgentEvent } from "../src/types.ts";
+import { createSessionStartedEvent, createTestSpec } from "./fixtures/spec.ts";
 
 const timestamp = "2026-08-18T00:00:00.000Z";
 
 function normalEvents(): AgentEvent[] {
+    const spec = createTestSpec({
+        id: "test.replay",
+        sourcePath: "specs/replay.md",
+    });
     return [
-        {
-            id: "event-1",
+        createSessionStartedEvent({
+            eventId: "event-1",
             sessionId: "session-1",
-            sequence: 1,
+            spec,
             timestamp,
-            type: "session_started",
-            specId: "test.replay",
-            specPath: "specs/replay.md",
-        },
+        }),
         {
             id: "event-2",
             sessionId: "session-1",
@@ -211,5 +213,23 @@ test("rejects events appended after a final declaration", () => {
     assert.throws(
         () => rebuildTaskState(events),
         expectReplayError("event_after_final"),
+    );
+});
+
+test("rejects a Session whose Spec snapshot was changed after hashing", () => {
+    const events = normalEvents();
+    const startEvent = events[0];
+    assert.equal(startEvent.type, "session_started");
+    events[0] = {
+        ...startEvent,
+        specSnapshot: {
+            ...startEvent.specSnapshot,
+            context: "Tampered context.",
+        },
+    };
+
+    assert.throws(
+        () => rebuildTaskState(events),
+        expectReplayError("session_spec_digest_invalid"),
     );
 });
