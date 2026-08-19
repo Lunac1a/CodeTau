@@ -7,6 +7,7 @@ export function createTestSpec(options: {
     sourcePath?: string;
     context?: string;
     maxModelTurns?: number;
+    maxToolCalls?: number;
 } = {}): LoadedSpec {
     const contract: TaskSpecContract = {
         version: 1,
@@ -26,7 +27,7 @@ export function createTestSpec(options: {
         phases: [{ id: "analyze", description: "Analyze the task." }],
         budget: {
             maxModelTurns: options.maxModelTurns ?? 3,
-            maxToolCalls: 10,
+            maxToolCalls: options.maxToolCalls ?? 10,
             maxRetries: 1,
         },
         userInteraction: {

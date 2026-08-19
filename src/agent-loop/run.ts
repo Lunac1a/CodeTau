@@ -2,12 +2,16 @@ import { randomUUID } from "node:crypto";
 
 import { rebuildTaskState, type TaskState, type TerminalStatus } from "../events.ts";
 import type { ModelMessage, ModelProvider } from "../model.ts";
+import { PermissionPolicy } from "../permissions/policy.ts";
 import type { EventStore } from "../persistence/event-store.ts";
 import type { LoadedSpec } from "../spec/types.ts";
+import { ToolRegistry } from "../tools/registry.ts";
 import type {
     AgentEvent,
     EventBase,
     ModelResponse,
+    ToolCall,
+    ToolResult,
     TaskStatus,
 } from "../types.ts";
 import { AgentLoopError } from "./errors.ts";
@@ -22,6 +26,8 @@ export type RunAgentLoopOptions = {
     spec: LoadedSpec;
     model: ModelProvider;
     eventStore: EventStore;
+    toolRegistry?: ToolRegistry;
+    permissionPolicy?: PermissionPolicy;
     runtime?: AgentLoopRuntime;
 };
 
@@ -47,7 +53,14 @@ const defaultRuntime: AgentLoopRuntime = {
     now: () => new Date().toISOString(),
 };
 
-function buildInitialMessages(spec: LoadedSpec): ModelMessage[] {
+function buildInitialMessages(
+    spec: LoadedSpec,
+    availableToolNames: readonly string[],
+): ModelMessage[] {
+    const toolDescription =
+        availableToolNames.length === 0
+            ? "No tools are available in this minimal loop."
+            : `Available tools: ${availableToolNames.join(", ")}`;
     return [
         {
             role: "system",
@@ -55,7 +68,7 @@ function buildInitialMessages(spec: LoadedSpec): ModelMessage[] {
                 `Task ID: ${spec.contract.id}`,
                 `Goal: ${spec.contract.goal}`,
                 "Current state: analyzing",
-                "No tools are available in this minimal loop.",
+                toolDescription,
                 "A completed outcome requires external validation and will not be accepted yet.",
             ].join("\n"),
         },
@@ -66,12 +79,22 @@ function buildInitialMessages(spec: LoadedSpec): ModelMessage[] {
     ];
 }
 
-function rebuildMessages(spec: LoadedSpec, events: readonly AgentEvent[]): ModelMessage[] {
-    const messages = buildInitialMessages(spec);
+function rebuildMessages(
+    spec: LoadedSpec,
+    events: readonly AgentEvent[],
+    availableToolNames: readonly string[],
+): ModelMessage[] {
+    const messages = buildInitialMessages(spec, availableToolNames);
 
     for (const event of events) {
         if (event.type === "model_text") {
             messages.push({ role: "assistant", content: event.text });
+        } else if (event.type === "tool_result") {
+            messages.push({
+                role: "tool",
+                toolCallId: event.toolCallId,
+                content: serializeToolResult(event.result),
+            });
         }
     }
 
@@ -82,9 +105,18 @@ function countModelTurns(events: readonly AgentEvent[]): number {
     return events.filter(
         (event) =>
             event.type === "model_text" ||
+            event.type === "model_tool_call" ||
             event.type === "model_finish" ||
             event.type === "model_error",
     ).length;
+}
+
+function countToolCalls(events: readonly AgentEvent[]): number {
+    return events.filter((event) => event.type === "model_tool_call").length;
+}
+
+function serializeToolResult(result: ToolResult): string {
+    return JSON.stringify(result);
 }
 
 function safeErrorMessage(error: unknown): string {
@@ -192,10 +224,21 @@ async function continueModelLoop(options: {
     model: ModelProvider;
     writer: EventWriter;
     messages: ModelMessage[];
+    toolRegistry: ToolRegistry;
+    permissionPolicy: PermissionPolicy;
     initialModelTurns: number;
+    initialToolCalls: number;
 }): Promise<TaskState> {
-    const { spec, model, writer, messages } = options;
+    const {
+        spec,
+        model,
+        writer,
+        messages,
+        toolRegistry,
+        permissionPolicy,
+    } = options;
     let modelTurns = options.initialModelTurns;
+    let toolCalls = options.initialToolCalls;
 
     while (true) {
         if (modelTurns >= spec.contract.budget.maxModelTurns) {
@@ -218,7 +261,7 @@ async function continueModelLoop(options: {
         try {
             response = await model.generate({
                 messages: [...messages],
-                availableToolNames: [],
+                availableToolNames: toolRegistry.names(),
             });
         } catch (error) {
             const errorEvent = await writer.append({
@@ -259,17 +302,7 @@ async function continueModelLoop(options: {
             return finalizeModelResponse(response, finishEvent.id, writer);
         }
 
-        let sourceEventId: string | undefined;
-        for (const toolCall of response.calls) {
-            const toolEvent = await writer.append({
-                ...writer.nextBase(),
-                type: "model_tool_call",
-                toolCall,
-            });
-            sourceEventId = toolEvent.id;
-        }
-
-        if (sourceEventId === undefined) {
+        if (response.calls.length === 0) {
             const errorEvent = await writer.append({
                 ...writer.nextBase(),
                 type: "model_error",
@@ -278,20 +311,95 @@ async function continueModelLoop(options: {
                     message: "The model returned an empty tool call list.",
                 },
             });
-            sourceEventId = errorEvent.id;
+            return writer.finalize(
+                "failed",
+                "The model returned an empty tool call list.",
+                errorEvent.id,
+                "An empty tool call response cannot advance the task.",
+            );
         }
 
-        return writer.finalize(
-            "failed",
-            "Tool calls are not supported by the minimal Agent loop.",
-            sourceEventId,
-            "The model requested tools before a ToolRegistry was available.",
-        );
+        for (const toolCall of response.calls) {
+            if (toolCalls >= spec.contract.budget.maxToolCalls) {
+                const budgetEvent = await writer.append({
+                    ...writer.nextBase(),
+                    type: "budget_exhausted",
+                    budget: "tool_calls",
+                    limit: spec.contract.budget.maxToolCalls,
+                });
+                return writer.finalize(
+                    "failed",
+                    "Tool call budget exhausted.",
+                    budgetEvent.id,
+                    "The tool call budget was exhausted before validation.",
+                );
+            }
+
+            await writer.append({
+                ...writer.nextBase(),
+                type: "model_tool_call",
+                toolCall,
+            });
+            toolCalls += 1;
+            const result = await executeToolCall(
+                toolCall,
+                toolRegistry,
+                permissionPolicy,
+            );
+            await writer.append({
+                ...writer.nextBase(),
+                type: "tool_result",
+                toolCallId: toolCall.id,
+                result,
+            });
+            messages.push({
+                role: "tool",
+                toolCallId: toolCall.id,
+                content: serializeToolResult(result),
+            });
+        }
     }
+}
+
+async function executeToolCall(
+    call: ToolCall,
+    toolRegistry: ToolRegistry,
+    permissionPolicy: PermissionPolicy,
+): Promise<ToolResult> {
+    const tool = toolRegistry.get(call.name);
+    if (tool === undefined) {
+        return toolRegistry.execute(call);
+    }
+
+    const decision = permissionPolicy.evaluate(tool.permission);
+    if (decision.kind === "deny") {
+        return {
+            ok: false,
+            error: {
+                code: decision.code,
+                message: decision.message,
+            },
+        };
+    }
+    if (decision.kind === "approval_required") {
+        return {
+            ok: false,
+            error: {
+                code: "approval_required",
+                message: `Tool requires approval before execution: ${call.name}`,
+                details: { allowedResponses: decision.allowedResponses },
+            },
+        };
+    }
+
+    return toolRegistry.execute(call);
 }
 
 export async function runAgentLoop(options: RunAgentLoopOptions): Promise<TaskState> {
     const runtime = options.runtime ?? defaultRuntime;
+    const toolRegistry = options.toolRegistry ?? new ToolRegistry();
+    const permissionPolicy =
+        options.permissionPolicy ?? new PermissionPolicy(options.spec.contract);
     const existingEvents = await options.eventStore.loadSession(options.sessionId);
 
     if (existingEvents.length > 0) {
@@ -330,13 +438,19 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<TaskSt
         spec: options.spec,
         model: options.model,
         writer,
-        messages: buildInitialMessages(options.spec),
+        messages: buildInitialMessages(options.spec, toolRegistry.names()),
+        toolRegistry,
+        permissionPolicy,
         initialModelTurns: 0,
+        initialToolCalls: 0,
     });
 }
 
 export async function resumeAgentLoop(options: RunAgentLoopOptions): Promise<TaskState> {
     const runtime = options.runtime ?? defaultRuntime;
+    const toolRegistry = options.toolRegistry ?? new ToolRegistry();
+    const permissionPolicy =
+        options.permissionPolicy ?? new PermissionPolicy(options.spec.contract);
     const events = await options.eventStore.loadSession(options.sessionId);
 
     if (events.length === 0) {
@@ -425,20 +539,36 @@ export async function resumeAgentLoop(options: RunAgentLoopOptions): Promise<Tas
             lastEvent.id,
             "The recovered session had exhausted its model turn budget.",
         );
-    } else if (lastEvent.type === "model_tool_call") {
-        return writer.finalize(
-            "failed",
-            "Tool calls are not supported by the minimal Agent loop.",
-            lastEvent.id,
-            "The recovered session was waiting for an unavailable ToolRegistry.",
+    }
+
+    const messages = rebuildMessages(options.spec, events, toolRegistry.names());
+    if (lastEvent.type === "model_tool_call") {
+        const result = await executeToolCall(
+            lastEvent.toolCall,
+            toolRegistry,
+            permissionPolicy,
         );
+        await writer.append({
+            ...writer.nextBase(),
+            type: "tool_result",
+            toolCallId: lastEvent.toolCall.id,
+            result,
+        });
+        messages.push({
+            role: "tool",
+            toolCallId: lastEvent.toolCall.id,
+            content: serializeToolResult(result),
+        });
     }
 
     return continueModelLoop({
         spec: options.spec,
         model: options.model,
         writer,
-        messages: rebuildMessages(options.spec, events),
+        messages,
+        toolRegistry,
+        permissionPolicy,
         initialModelTurns: countModelTurns(events),
+        initialToolCalls: countToolCalls(events),
     });
 }
