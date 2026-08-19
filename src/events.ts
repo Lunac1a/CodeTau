@@ -13,6 +13,10 @@ export type TaskState = Readonly<{
     revision: number;
     lastSequence: number;
     lastEventId: string;
+    pendingApproval?: Readonly<{
+        toolCallId: string;
+        toolName: string;
+    }>;
     final?: Readonly<{
         status: TerminalStatus;
         message: string;
@@ -33,6 +37,9 @@ export type EventReplayErrorCode =
     | "state_reason_missing"
     | "state_from_mismatch"
     | "state_transition_invalid"
+    | "approval_source_invalid"
+    | "approval_state_invalid"
+    | "approval_call_mismatch"
     | "final_state_mismatch"
     | "final_message_missing";
 
@@ -56,6 +63,9 @@ export class EventReplayError extends Error {
 }
 
 function freezeState(state: TaskState): TaskState {
+    if (state.pendingApproval !== undefined) {
+        Object.freeze(state.pendingApproval);
+    }
     if (state.final !== undefined) {
         Object.freeze(state.final);
     }
@@ -67,20 +77,25 @@ function advanceState(
     event: AgentEvent,
     changes: Partial<TaskState> = {},
 ): TaskState {
-    return freezeState({
+    const nextState = {
         ...state,
         ...changes,
         lastSequence: event.sequence,
         lastEventId: event.id,
-    });
+    };
+    if (nextState.pendingApproval === undefined) {
+        delete nextState.pendingApproval;
+    }
+    return freezeState(nextState);
 }
 
 function applyStateChange(
     state: TaskState,
     event: Extract<AgentEvent, { type: "state_changed" }>,
-    priorEventIds: ReadonlySet<string>,
+    priorEvents: ReadonlyMap<string, AgentEvent>,
 ): TaskState {
-    if (!priorEventIds.has(event.sourceEventId)) {
+    const sourceEvent = priorEvents.get(event.sourceEventId);
+    if (sourceEvent === undefined) {
         throw new EventReplayError({
             code: "state_source_invalid",
             message: `State change source must reference an earlier event: ${event.sourceEventId}`,
@@ -118,10 +133,52 @@ function applyStateChange(
         throw error;
     }
 
-    return advanceState(state, event, {
+    const changes: {
+        status: TaskStatus;
+        revision: number;
+        pendingApproval?: TaskState["pendingApproval"];
+    } = {
         status: event.to,
         revision: state.revision + 1,
-    });
+    };
+    if (event.to === "awaiting_approval") {
+        if (sourceEvent.type !== "model_tool_call") {
+            throw new EventReplayError({
+                code: "approval_source_invalid",
+                message: "Approval state must reference a model_tool_call event",
+                event,
+            });
+        }
+        changes.pendingApproval = {
+            toolCallId: sourceEvent.toolCall.id,
+            toolName: sourceEvent.toolCall.name,
+        };
+    } else if (state.pendingApproval !== undefined) {
+        changes.pendingApproval = undefined;
+    }
+
+    return advanceState(state, event, changes);
+}
+
+function applyApprovalResolved(
+    state: TaskState,
+    event: Extract<AgentEvent, { type: "approval_resolved" }>,
+): TaskState {
+    if (state.status !== "awaiting_approval" || state.pendingApproval === undefined) {
+        throw new EventReplayError({
+            code: "approval_state_invalid",
+            message: "An approval can only be resolved while approval is pending",
+            event,
+        });
+    }
+    if (event.toolCallId !== state.pendingApproval.toolCallId) {
+        throw new EventReplayError({
+            code: "approval_call_mismatch",
+            message: `Approval resolved ${event.toolCallId}, expected ${state.pendingApproval.toolCallId}`,
+            event,
+        });
+    }
+    return advanceState(state, event);
 }
 
 function applyFinalEvent(
@@ -188,7 +245,7 @@ export function rebuildTaskState(events: readonly AgentEvent[]): TaskState {
         lastSequence: first.sequence,
         lastEventId: first.id,
     });
-    const eventIds = new Set<string>();
+    const eventsById = new Map<string, AgentEvent>();
 
     for (const [index, event] of events.entries()) {
         const expectedSequence = index + 1;
@@ -201,7 +258,7 @@ export function rebuildTaskState(events: readonly AgentEvent[]): TaskState {
             });
         }
 
-        if (eventIds.has(event.id)) {
+        if (eventsById.has(event.id)) {
             throw new EventReplayError({
                 code: "event_id_duplicate",
                 message: `Duplicate event id: ${event.id}`,
@@ -218,7 +275,7 @@ export function rebuildTaskState(events: readonly AgentEvent[]): TaskState {
         }
 
         if (index === 0) {
-            eventIds.add(event.id);
+            eventsById.set(event.id, event);
             continue;
         }
 
@@ -251,14 +308,16 @@ export function rebuildTaskState(events: readonly AgentEvent[]): TaskState {
         }
 
         if (event.type === "state_changed") {
-            state = applyStateChange(state, event, eventIds);
+            state = applyStateChange(state, event, eventsById);
+        } else if (event.type === "approval_resolved") {
+            state = applyApprovalResolved(state, event);
         } else if (event.type === "final") {
             state = applyFinalEvent(state, event);
         } else {
             state = advanceState(state, event);
         }
 
-        eventIds.add(event.id);
+        eventsById.set(event.id, event);
     }
 
     return state;

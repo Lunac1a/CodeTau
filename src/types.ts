@@ -1,4 +1,5 @@
 import type { SpecSnapshot } from "./spec/types.ts";
+import type { ApprovalResponse } from "./spec/types.ts";
 
 export type TaskStatus =
     | "created"
@@ -106,6 +107,11 @@ export type AgentEvent =
         readonly type: "tool_result";
         readonly toolCallId: string;
         readonly result: ToolResult;
+      })
+    | (EventBase & {
+        readonly type: "approval_resolved";
+        readonly toolCallId: string;
+        readonly response: ApprovalResponse;
       })
     | (EventBase & {
         readonly type: "final";

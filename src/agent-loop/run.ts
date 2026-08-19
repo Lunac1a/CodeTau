@@ -4,7 +4,7 @@ import { rebuildTaskState, type TaskState, type TerminalStatus } from "../events
 import type { ModelMessage, ModelProvider } from "../model.ts";
 import { PermissionPolicy } from "../permissions/policy.ts";
 import type { EventStore } from "../persistence/event-store.ts";
-import type { LoadedSpec } from "../spec/types.ts";
+import type { ApprovalResponse, LoadedSpec } from "../spec/types.ts";
 import { ToolRegistry } from "../tools/registry.ts";
 import type {
     AgentEvent,
@@ -28,6 +28,7 @@ export type RunAgentLoopOptions = {
     eventStore: EventStore;
     toolRegistry?: ToolRegistry;
     permissionPolicy?: PermissionPolicy;
+    approvalResponse?: ApprovalResponse;
     runtime?: AgentLoopRuntime;
 };
 
@@ -46,6 +47,7 @@ type EventWriter = {
         reason: string,
     ): Promise<TaskState>;
     appendFinal(status: TerminalStatus, message: string): Promise<TaskState>;
+    rebuild(): Promise<TaskState>;
 };
 
 const defaultRuntime: AgentLoopRuntime = {
@@ -69,6 +71,7 @@ function buildInitialMessages(
                 `Goal: ${spec.contract.goal}`,
                 "Current state: analyzing",
                 toolDescription,
+                "Request at most one approval-requiring tool at a time.",
                 "A completed outcome requires external validation and will not be accepted yet.",
             ].join("\n"),
         },
@@ -180,6 +183,10 @@ function createEventWriter(options: {
         return rebuildTaskState(await eventStore.loadSession(sessionId));
     }
 
+    async function rebuild(): Promise<TaskState> {
+        return rebuildTaskState(await eventStore.loadSession(sessionId));
+    }
+
     async function finalize(
         terminalStatus: TerminalStatus,
         message: string,
@@ -190,7 +197,7 @@ function createEventWriter(options: {
         return appendFinal(terminalStatus, message);
     }
 
-    return { append, nextBase, changeState, finalize, appendFinal };
+    return { append, nextBase, changeState, finalize, appendFinal, rebuild };
 }
 
 async function finalizeModelResponse(
@@ -319,6 +326,32 @@ async function continueModelLoop(options: {
             );
         }
 
+        const approvalCalls = response.calls.filter((call) => {
+            const tool = toolRegistry.get(call.name);
+            return (
+                tool !== undefined &&
+                permissionPolicy.evaluate(tool.permission).kind ===
+                    "approval_required"
+            );
+        });
+        if (response.calls.length > 1 && approvalCalls.length > 0) {
+            const errorEvent = await writer.append({
+                ...writer.nextBase(),
+                type: "model_error",
+                error: {
+                    code: "approval_batch_unsupported",
+                    message:
+                        "Approval-requiring tools must be requested one at a time",
+                },
+            });
+            return writer.finalize(
+                "failed",
+                "Approval-requiring tools must be requested one at a time.",
+                errorEvent.id,
+                "A batched approval request cannot be resumed safely.",
+            );
+        }
+
         for (const toolCall of response.calls) {
             if (toolCalls >= spec.contract.budget.maxToolCalls) {
                 const budgetEvent = await writer.append({
@@ -335,17 +368,26 @@ async function continueModelLoop(options: {
                 );
             }
 
-            await writer.append({
+            const toolEvent = await writer.append({
                 ...writer.nextBase(),
                 type: "model_tool_call",
                 toolCall,
             });
             toolCalls += 1;
-            const result = await executeToolCall(
+            const outcome = await executeToolCall(
                 toolCall,
                 toolRegistry,
                 permissionPolicy,
             );
+            if (outcome.kind === "approval_required") {
+                await writer.changeState(
+                    "awaiting_approval",
+                    `Tool requires approval before execution: ${toolCall.name}`,
+                    toolEvent.id,
+                );
+                return writer.rebuild();
+            }
+            const { result } = outcome;
             await writer.append({
                 ...writer.nextBase(),
                 type: "tool_result",
@@ -361,38 +403,104 @@ async function continueModelLoop(options: {
     }
 }
 
+type ToolExecutionOutcome =
+    | { readonly kind: "result"; readonly result: ToolResult }
+    | {
+          readonly kind: "approval_required";
+          readonly allowedResponses: readonly ApprovalResponse[];
+      };
+
 async function executeToolCall(
     call: ToolCall,
     toolRegistry: ToolRegistry,
     permissionPolicy: PermissionPolicy,
-): Promise<ToolResult> {
+): Promise<ToolExecutionOutcome> {
     const tool = toolRegistry.get(call.name);
     if (tool === undefined) {
-        return toolRegistry.execute(call);
+        return { kind: "result", result: await toolRegistry.execute(call) };
     }
 
     const decision = permissionPolicy.evaluate(tool.permission);
     if (decision.kind === "deny") {
         return {
-            ok: false,
-            error: {
-                code: decision.code,
-                message: decision.message,
+            kind: "result",
+            result: {
+                ok: false,
+                error: {
+                    code: decision.code,
+                    message: decision.message,
+                },
             },
         };
     }
     if (decision.kind === "approval_required") {
         return {
-            ok: false,
-            error: {
-                code: "approval_required",
-                message: `Tool requires approval before execution: ${call.name}`,
-                details: { allowedResponses: decision.allowedResponses },
-            },
+            kind: "approval_required",
+            allowedResponses: decision.allowedResponses,
         };
     }
 
-    return toolRegistry.execute(call);
+    return { kind: "result", result: await toolRegistry.execute(call) };
+}
+
+function findToolCall(
+    events: readonly AgentEvent[],
+    toolCallId: string,
+): ToolCall | undefined {
+    for (const event of events) {
+        if (event.type === "model_tool_call" && event.toolCall.id === toolCallId) {
+            return event.toolCall;
+        }
+    }
+    return undefined;
+}
+
+function restoreSessionApprovals(
+    events: readonly AgentEvent[],
+    toolRegistry: ToolRegistry,
+    permissionPolicy: PermissionPolicy,
+): void {
+    for (const event of events) {
+        if (event.type !== "approval_resolved" || event.response !== "allow-session") {
+            continue;
+        }
+        const call = findToolCall(events, event.toolCallId);
+        const tool = call === undefined ? undefined : toolRegistry.get(call.name);
+        if (tool !== undefined) {
+            permissionPolicy.resolve(tool.permission, "allow-session");
+        }
+    }
+}
+
+async function resolveApprovedToolCall(options: {
+    call: ToolCall;
+    response: ApprovalResponse;
+    toolRegistry: ToolRegistry;
+    permissionPolicy: PermissionPolicy;
+}): Promise<ToolResult> {
+    const { call, response, toolRegistry, permissionPolicy } = options;
+    const tool = toolRegistry.get(call.name);
+    if (tool === undefined) {
+        return toolRegistry.execute(call);
+    }
+
+    const decision = permissionPolicy.resolve(tool.permission, response);
+    if (decision.kind === "allow") {
+        return toolRegistry.execute(call);
+    }
+    if (decision.kind === "deny") {
+        return {
+            ok: false,
+            error: { code: decision.code, message: decision.message },
+        };
+    }
+    return {
+        ok: false,
+        error: {
+            code: "approval_required",
+            message: `Tool still requires approval: ${call.name}`,
+        },
+    };
 }
 
 export async function runAgentLoop(options: RunAgentLoopOptions): Promise<TaskState> {
@@ -481,6 +589,8 @@ export async function resumeAgentLoop(options: RunAgentLoopOptions): Promise<Tas
         });
     }
 
+    restoreSessionApprovals(events, toolRegistry, permissionPolicy);
+
     const writer = createEventWriter({
         sessionId: options.sessionId,
         eventStore: options.eventStore,
@@ -500,6 +610,68 @@ export async function resumeAgentLoop(options: RunAgentLoopOptions): Promise<Tas
             ? `Recovered ${state.status} state: ${transition.reason}`
             : `Recovered terminal state: ${state.status}`;
         return writer.appendFinal(state.status, message);
+    }
+
+    if (state.status === "awaiting_approval") {
+        if (options.approvalResponse === undefined) {
+            return state;
+        }
+        const pendingApproval = state.pendingApproval;
+        if (pendingApproval === undefined) {
+            throw new AgentLoopError({
+                code: "session_state_unsupported",
+                message: "Approval state has no pending tool call",
+                sessionId: options.sessionId,
+            });
+        }
+        const pendingCall = findToolCall(events, pendingApproval.toolCallId);
+        if (pendingCall === undefined) {
+            throw new AgentLoopError({
+                code: "session_state_unsupported",
+                message: `Pending tool call is missing: ${pendingApproval.toolCallId}`,
+                sessionId: options.sessionId,
+            });
+        }
+
+        const approvalEvent = await writer.append({
+            ...writer.nextBase(),
+            type: "approval_resolved",
+            toolCallId: pendingCall.id,
+            response: options.approvalResponse,
+        });
+        const result = await resolveApprovedToolCall({
+            call: pendingCall,
+            response: options.approvalResponse,
+            toolRegistry,
+            permissionPolicy,
+        });
+        await writer.changeState(
+            "analyzing",
+            `Approval was resolved for tool: ${pendingCall.name}`,
+            approvalEvent.id,
+        );
+        await writer.append({
+            ...writer.nextBase(),
+            type: "tool_result",
+            toolCallId: pendingCall.id,
+            result,
+        });
+        const messages = rebuildMessages(options.spec, events, toolRegistry.names());
+        messages.push({
+            role: "tool",
+            toolCallId: pendingCall.id,
+            content: serializeToolResult(result),
+        });
+        return continueModelLoop({
+            spec: options.spec,
+            model: options.model,
+            writer,
+            messages,
+            toolRegistry,
+            permissionPolicy,
+            initialModelTurns: countModelTurns(events),
+            initialToolCalls: countToolCalls(events),
+        });
     }
 
     if (state.status === "created") {
@@ -543,11 +715,20 @@ export async function resumeAgentLoop(options: RunAgentLoopOptions): Promise<Tas
 
     const messages = rebuildMessages(options.spec, events, toolRegistry.names());
     if (lastEvent.type === "model_tool_call") {
-        const result = await executeToolCall(
+        const outcome = await executeToolCall(
             lastEvent.toolCall,
             toolRegistry,
             permissionPolicy,
         );
+        if (outcome.kind === "approval_required") {
+            await writer.changeState(
+                "awaiting_approval",
+                `Tool requires approval before execution: ${lastEvent.toolCall.name}`,
+                lastEvent.id,
+            );
+            return writer.rebuild();
+        }
+        const { result } = outcome;
         await writer.append({
             ...writer.nextBase(),
             type: "tool_result",
