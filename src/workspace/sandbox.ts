@@ -165,6 +165,10 @@ export class WorkspaceSandbox {
         }
     }
 
+    workspaceRoot(): string {
+        return this.root;
+    }
+
     async resolveExistingPath(target: string): Promise<ResolvedWorkspacePath> {
         const normalizedTarget = normalizeRelativePath(target);
         this.assertAllowed(normalizedTarget, target);

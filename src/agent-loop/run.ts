@@ -15,6 +15,7 @@ import type {
     TaskStatus,
 } from "../types.ts";
 import { AgentLoopError } from "./errors.ts";
+import { ValidationTracker } from "./validation.ts";
 
 export type AgentLoopRuntime = {
     nextEventId(): string;
@@ -204,8 +205,26 @@ async function finalizeModelResponse(
     response: Extract<ModelResponse, { kind: "finish" }>,
     finishEventId: string,
     writer: EventWriter,
+    validationTracker: ValidationTracker,
 ): Promise<TaskState> {
     if (response.outcome === "completed") {
+        if (validationTracker.isComplete()) {
+            const validatingEvent = await writer.changeState(
+                "validating",
+                "All Spec acceptance commands have current passing evidence.",
+                finishEventId,
+            );
+            const message =
+                response.message.trim() === ""
+                    ? "The task completed with passing validation evidence."
+                    : response.message;
+            return writer.finalize(
+                "completed",
+                message,
+                validatingEvent.id,
+                "All required validation commands passed after the latest workspace change.",
+            );
+        }
         return writer.finalize(
             "failed",
             "Model completion was rejected because no validation evidence exists.",
@@ -233,6 +252,7 @@ async function continueModelLoop(options: {
     messages: ModelMessage[];
     toolRegistry: ToolRegistry;
     permissionPolicy: PermissionPolicy;
+    validationTracker: ValidationTracker;
     initialModelTurns: number;
     initialToolCalls: number;
 }): Promise<TaskState> {
@@ -243,6 +263,7 @@ async function continueModelLoop(options: {
         messages,
         toolRegistry,
         permissionPolicy,
+        validationTracker,
     } = options;
     let modelTurns = options.initialModelTurns;
     let toolCalls = options.initialToolCalls;
@@ -306,7 +327,12 @@ async function continueModelLoop(options: {
                 message: response.message,
                 usage: response.usage,
             });
-            return finalizeModelResponse(response, finishEvent.id, writer);
+            return finalizeModelResponse(
+                response,
+                finishEvent.id,
+                writer,
+                validationTracker,
+            );
         }
 
         if (response.calls.length === 0) {
@@ -388,7 +414,7 @@ async function continueModelLoop(options: {
                 return writer.rebuild();
             }
             const { result } = outcome;
-            await writer.append({
+            const resultEvent = await writer.append({
                 ...writer.nextBase(),
                 type: "tool_result",
                 toolCallId: toolCall.id,
@@ -399,8 +425,41 @@ async function continueModelLoop(options: {
                 toolCallId: toolCall.id,
                 content: serializeToolResult(result),
             });
+            validationTracker.record(toolCall, result);
+            const retryFailure = await failIfRetryBudgetExceeded(
+                spec,
+                writer,
+                validationTracker,
+                resultEvent.id,
+            );
+            if (retryFailure !== undefined) {
+                return retryFailure;
+            }
         }
     }
+}
+
+async function failIfRetryBudgetExceeded(
+    spec: LoadedSpec,
+    writer: EventWriter,
+    validationTracker: ValidationTracker,
+    sourceEventId: string,
+): Promise<TaskState | undefined> {
+    if (validationTracker.failedAttempts <= spec.contract.budget.maxRetries) {
+        return undefined;
+    }
+    const budgetEvent = await writer.append({
+        ...writer.nextBase(),
+        type: "budget_exhausted",
+        budget: "retries",
+        limit: spec.contract.budget.maxRetries,
+    });
+    return writer.finalize(
+        "failed",
+        "Validation retry budget exhausted.",
+        budgetEvent.id,
+        `Validation continued to fail after tool result ${sourceEventId}.`,
+    );
 }
 
 type ToolExecutionOutcome =
@@ -508,6 +567,10 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<TaskSt
     const toolRegistry = options.toolRegistry ?? new ToolRegistry();
     const permissionPolicy =
         options.permissionPolicy ?? new PermissionPolicy(options.spec.contract);
+    const validationTracker = new ValidationTracker(
+        options.spec.contract.acceptance.commands.length,
+        toolRegistry,
+    );
     const existingEvents = await options.eventStore.loadSession(options.sessionId);
 
     if (existingEvents.length > 0) {
@@ -549,6 +612,7 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<TaskSt
         messages: buildInitialMessages(options.spec, toolRegistry.names()),
         toolRegistry,
         permissionPolicy,
+        validationTracker,
         initialModelTurns: 0,
         initialToolCalls: 0,
     });
@@ -570,6 +634,11 @@ export async function resumeAgentLoop(options: RunAgentLoopOptions): Promise<Tas
     }
 
     const state = rebuildTaskState(events);
+    const validationTracker = ValidationTracker.fromEvents(
+        events,
+        options.spec.contract.acceptance.commands.length,
+        toolRegistry,
+    );
     if (
         state.specId !== options.spec.contract.id ||
         state.specDigest !== options.spec.digest
@@ -650,7 +719,7 @@ export async function resumeAgentLoop(options: RunAgentLoopOptions): Promise<Tas
             `Approval was resolved for tool: ${pendingCall.name}`,
             approvalEvent.id,
         );
-        await writer.append({
+        const resultEvent = await writer.append({
             ...writer.nextBase(),
             type: "tool_result",
             toolCallId: pendingCall.id,
@@ -662,6 +731,16 @@ export async function resumeAgentLoop(options: RunAgentLoopOptions): Promise<Tas
             toolCallId: pendingCall.id,
             content: serializeToolResult(result),
         });
+        validationTracker.record(pendingCall, result);
+        const retryFailure = await failIfRetryBudgetExceeded(
+            options.spec,
+            writer,
+            validationTracker,
+            resultEvent.id,
+        );
+        if (retryFailure !== undefined) {
+            return retryFailure;
+        }
         return continueModelLoop({
             spec: options.spec,
             model: options.model,
@@ -669,6 +748,7 @@ export async function resumeAgentLoop(options: RunAgentLoopOptions): Promise<Tas
             messages,
             toolRegistry,
             permissionPolicy,
+            validationTracker,
             initialModelTurns: countModelTurns(events),
             initialToolCalls: countToolCalls(events),
         });
@@ -696,6 +776,7 @@ export async function resumeAgentLoop(options: RunAgentLoopOptions): Promise<Tas
             },
             lastEvent.id,
             writer,
+            validationTracker,
         );
     } else if (lastEvent.type === "model_error") {
         return writer.finalize(
@@ -729,7 +810,7 @@ export async function resumeAgentLoop(options: RunAgentLoopOptions): Promise<Tas
             return writer.rebuild();
         }
         const { result } = outcome;
-        await writer.append({
+        const resultEvent = await writer.append({
             ...writer.nextBase(),
             type: "tool_result",
             toolCallId: lastEvent.toolCall.id,
@@ -740,6 +821,16 @@ export async function resumeAgentLoop(options: RunAgentLoopOptions): Promise<Tas
             toolCallId: lastEvent.toolCall.id,
             content: serializeToolResult(result),
         });
+        validationTracker.record(lastEvent.toolCall, result);
+        const retryFailure = await failIfRetryBudgetExceeded(
+            options.spec,
+            writer,
+            validationTracker,
+            resultEvent.id,
+        );
+        if (retryFailure !== undefined) {
+            return retryFailure;
+        }
     }
 
     return continueModelLoop({
@@ -749,6 +840,7 @@ export async function resumeAgentLoop(options: RunAgentLoopOptions): Promise<Tas
         messages,
         toolRegistry,
         permissionPolicy,
+        validationTracker,
         initialModelTurns: countModelTurns(events),
         initialToolCalls: countToolCalls(events),
     });

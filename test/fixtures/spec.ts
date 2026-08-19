@@ -8,6 +8,8 @@ export function createTestSpec(options: {
     context?: string;
     maxModelTurns?: number;
     maxToolCalls?: number;
+    maxRetries?: number;
+    acceptanceCommands?: TaskSpecContract["acceptance"]["commands"];
 } = {}): LoadedSpec {
     const contract: TaskSpecContract = {
         version: 1,
@@ -21,14 +23,16 @@ export function createTestSpec(options: {
             forbiddenActions: ["network-access"],
         },
         acceptance: {
-            commands: [{ executable: "pnpm", args: ["test"] }],
+            commands: options.acceptanceCommands ?? [
+                { executable: "pnpm", args: ["test"] },
+            ],
             assertions: ["All tests pass."],
         },
         phases: [{ id: "analyze", description: "Analyze the task." }],
         budget: {
             maxModelTurns: options.maxModelTurns ?? 3,
             maxToolCalls: options.maxToolCalls ?? 10,
-            maxRetries: 1,
+            maxRetries: options.maxRetries ?? 1,
         },
         userInteraction: {
             allowQuestions: false,
