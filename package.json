@@ -8,7 +8,7 @@
     "node": ">=22.6"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --experimental-sqlite --test --test-isolation=none test/state.test.ts test/model.test.ts test/spec-schema.test.ts test/spec-loader.test.ts test/event-replay.test.ts test/in-memory-event-store.test.ts test/sqlite-event-store.test.ts",
+    "test": "node --experimental-strip-types --experimental-sqlite --test --test-isolation=none test/state.test.ts test/model.test.ts test/spec-schema.test.ts test/spec-loader.test.ts test/event-replay.test.ts test/in-memory-event-store.test.ts test/sqlite-event-store.test.ts test/agent-loop.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
