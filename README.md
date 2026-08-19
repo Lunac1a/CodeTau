@@ -47,5 +47,10 @@ test/                  TypeScript unit and integration tests
 4. Add the CLI, then CodeTau-Bench Mini.
 5. Pin and integrate an official Tau benchmark version through the Python bridge.
 
-The implementation directories are intentionally empty so the agent loop can be
-built from first principles. No API key is needed at this stage.
+## Current implementation status
+
+Phases 1 and 2 are complete in `src/`: the Spec contract, task-state machine,
+model-independent Agent loop, immutable events, SQLite recovery, TaskState
+snapshots, and JSONL audit/replay path are implemented and tested. The next
+phase adds workspace tools, permission checks, structured patches, and the
+validation feedback loop. No API key is needed for the completed foundation.
