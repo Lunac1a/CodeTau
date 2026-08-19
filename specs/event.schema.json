@@ -12,6 +12,7 @@
     { "$ref": "#/$defs/modelError" },
     { "$ref": "#/$defs/budgetExhausted" },
     { "$ref": "#/$defs/toolResult" },
+    { "$ref": "#/$defs/approvalResolved" },
     { "$ref": "#/$defs/final" }
   ],
   "$defs": {
@@ -219,6 +220,22 @@
                 }
               ]
             }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "approvalResolved": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/eventBase" },
+        {
+          "type": "object",
+          "required": ["toolCallId", "response"],
+          "properties": {
+            "type": { "const": "approval_resolved" },
+            "toolCallId": { "type": "string", "minLength": 1 },
+            "response": { "enum": ["allow-once", "allow-session", "deny"] }
           }
         }
       ],
