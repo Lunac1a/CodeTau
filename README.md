@@ -49,8 +49,10 @@ test/                  TypeScript unit and integration tests
 
 ## Current implementation status
 
-Phases 1 and 2 are complete in `src/`: the Spec contract, task-state machine,
-model-independent Agent loop, immutable events, SQLite recovery, TaskState
-snapshots, and JSONL audit/replay path are implemented and tested. The next
-phase adds workspace tools, permission checks, structured patches, and the
-validation feedback loop. No API key is needed for the completed foundation.
+Phases 1 through 3 are complete in `src/`: the Spec contract, task-state
+machine, model-independent Agent loop, immutable events, SQLite recovery,
+TaskState snapshots, JSONL audit/replay, sandboxed workspace reads, durable
+approvals, structured patches, and the bounded validation feedback loop are
+implemented and tested. A task can reach `completed` only after every Spec
+acceptance command has current passing evidence. The next phase adds the CLI
+and CodeTau-Bench Mini. No API key is needed for the completed foundation.
