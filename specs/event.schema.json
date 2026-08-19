@@ -1,0 +1,256 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codetau.local/schemas/agent-event-v1.json",
+  "title": "CodeTau Agent Event v1",
+  "type": "object",
+  "oneOf": [
+    { "$ref": "#/$defs/sessionStarted" },
+    { "$ref": "#/$defs/stateChanged" },
+    { "$ref": "#/$defs/modelToolCall" },
+    { "$ref": "#/$defs/modelText" },
+    { "$ref": "#/$defs/modelFinish" },
+    { "$ref": "#/$defs/modelError" },
+    { "$ref": "#/$defs/budgetExhausted" },
+    { "$ref": "#/$defs/toolResult" },
+    { "$ref": "#/$defs/final" }
+  ],
+  "$defs": {
+    "eventBase": {
+      "type": "object",
+      "required": ["id", "sessionId", "sequence", "timestamp", "type"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "sessionId": { "type": "string", "minLength": 1 },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "timestamp": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "minLength": 1 }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inputTokens", "outputTokens"],
+      "properties": {
+        "inputTokens": { "type": "integer", "minimum": 0 },
+        "outputTokens": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "toolCall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "input"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "input": {}
+      }
+    },
+    "sessionStarted": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/eventBase" },
+        {
+          "type": "object",
+          "required": ["specId", "specPath", "specDigest", "specSnapshot"],
+          "properties": {
+            "type": { "const": "session_started" },
+            "specId": { "type": "string", "minLength": 1 },
+            "specPath": { "type": "string", "minLength": 1 },
+            "specDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "specSnapshot": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["contract", "context"],
+              "properties": {
+                "contract": {
+                  "$ref": "https://codetau.local/schemas/task-spec-v1.json"
+                },
+                "context": { "type": "string" }
+              }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "stateChanged": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/eventBase" },
+        {
+          "type": "object",
+          "required": ["from", "to", "reason", "sourceEventId"],
+          "properties": {
+            "type": { "const": "state_changed" },
+            "from": { "$ref": "#/$defs/taskStatus" },
+            "to": { "$ref": "#/$defs/taskStatus" },
+            "reason": { "type": "string", "minLength": 1 },
+            "sourceEventId": { "type": "string", "minLength": 1 }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "modelToolCall": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/eventBase" },
+        {
+          "type": "object",
+          "required": ["toolCall"],
+          "properties": {
+            "type": { "const": "model_tool_call" },
+            "toolCall": { "$ref": "#/$defs/toolCall" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "modelText": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/eventBase" },
+        {
+          "type": "object",
+          "required": ["text", "usage"],
+          "properties": {
+            "type": { "const": "model_text" },
+            "text": { "type": "string" },
+            "usage": { "$ref": "#/$defs/usage" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "modelFinish": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/eventBase" },
+        {
+          "type": "object",
+          "required": ["outcome", "message", "usage"],
+          "properties": {
+            "type": { "const": "model_finish" },
+            "outcome": { "enum": ["completed", "failed", "blocked"] },
+            "message": { "type": "string" },
+            "usage": { "$ref": "#/$defs/usage" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "modelError": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/eventBase" },
+        {
+          "type": "object",
+          "required": ["error"],
+          "properties": {
+            "type": { "const": "model_error" },
+            "error": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code", "message"],
+              "properties": {
+                "code": { "type": "string", "minLength": 1 },
+                "message": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "budgetExhausted": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/eventBase" },
+        {
+          "type": "object",
+          "required": ["budget", "limit"],
+          "properties": {
+            "type": { "const": "budget_exhausted" },
+            "budget": { "enum": ["model_turns", "tool_calls", "retries"] },
+            "limit": { "type": "integer", "minimum": 0 }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "toolResult": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/eventBase" },
+        {
+          "type": "object",
+          "required": ["toolCallId", "result"],
+          "properties": {
+            "type": { "const": "tool_result" },
+            "toolCallId": { "type": "string", "minLength": 1 },
+            "result": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["ok", "output"],
+                  "properties": {
+                    "ok": { "const": true },
+                    "output": {}
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["ok", "error"],
+                  "properties": {
+                    "ok": { "const": false },
+                    "error": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["code", "message"],
+                      "properties": {
+                        "code": { "type": "string", "minLength": 1 },
+                        "message": { "type": "string", "minLength": 1 },
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "final": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/eventBase" },
+        {
+          "type": "object",
+          "required": ["status", "message"],
+          "properties": {
+            "type": { "const": "final" },
+            "status": { "enum": ["completed", "failed", "blocked"] },
+            "message": { "type": "string", "minLength": 1 }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "taskStatus": {
+      "enum": [
+        "created",
+        "analyzing",
+        "awaiting_approval",
+        "editing",
+        "validating",
+        "completed",
+        "failed",
+        "blocked"
+      ]
+    }
+  }
+}
