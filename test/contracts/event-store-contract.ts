@@ -58,7 +58,33 @@ export function runEventStoreContract(
 
             const events = await store.loadSession("session-a");
             assert.equal(events.length, 2);
-            assert.equal(rebuildTaskState(events).status, "analyzing");
+            const rebuilt = rebuildTaskState(events);
+            assert.equal(rebuilt.status, "analyzing");
+            assert.deepEqual(await store.loadTaskState("session-a"), rebuilt);
+        } finally {
+            await store.close();
+        }
+    });
+
+    test(`${implementationName}: appends a batch atomically`, async () => {
+        const store = await createStore();
+        try {
+            const start = startEvent("session-batch", "batch-event-1");
+            const invalidSecond = {
+                ...analyzingEvent(
+                    "session-batch",
+                    "batch-event-2",
+                    "batch-event-1",
+                ),
+                sequence: 3,
+            };
+
+            await assert.rejects(
+                store.appendMany([start, invalidSecond]),
+                expectStoreError("event_sequence_conflict"),
+            );
+            assert.deepEqual(await store.loadSession("session-batch"), []);
+            assert.equal(await store.loadTaskState("session-batch"), undefined);
         } finally {
             await store.close();
         }
