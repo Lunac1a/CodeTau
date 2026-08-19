@@ -24,6 +24,14 @@ export class ToolRegistry {
             });
         }
 
+        if (tool.permission.action.trim() === "") {
+            throw new ToolRegistryError({
+                code: "tool_action_invalid",
+                message: `Tool action must not be empty: ${tool.name}`,
+                toolName: tool.name,
+            });
+        }
+
         if (this.tools.has(tool.name)) {
             throw new ToolRegistryError({
                 code: "tool_already_registered",
@@ -37,6 +45,10 @@ export class ToolRegistry {
 
     has(name: string): boolean {
         return this.tools.has(name);
+    }
+
+    get(name: string): AgentTool | undefined {
+        return this.tools.get(name);
     }
 
     names(): readonly string[] {
