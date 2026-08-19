@@ -1,3 +1,4 @@
+import { EventValidationError, validateAgentEvent } from "../event-validation.ts";
 import { EventReplayError, rebuildTaskState } from "../events.ts";
 import type { AgentEvent } from "../types.ts";
 import type { EventStore } from "./event-store.ts";
@@ -14,6 +15,19 @@ export class InMemoryEventStore implements EventStore {
 
     async append(event: AgentEvent): Promise<void> {
         this.#assertOpen();
+
+        try {
+            validateAgentEvent(event);
+        } catch (error) {
+            if (error instanceof EventValidationError) {
+                throw new EventStoreError({
+                    code: "event_schema_invalid",
+                    message: error.message,
+                    cause: error,
+                });
+            }
+            throw error;
+        }
 
         if (this.#eventIds.has(event.id)) {
             throw new EventStoreError({

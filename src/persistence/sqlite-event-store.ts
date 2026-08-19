@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+import { EventValidationError, validateAgentEvent } from "../event-validation.ts";
 import { EventReplayError, rebuildTaskState } from "../events.ts";
 import type { AgentEvent } from "../types.ts";
 import type { EventStore } from "./event-store.ts";
@@ -41,6 +42,19 @@ export class SQLiteEventStore implements EventStore {
 
     async append(event: AgentEvent): Promise<void> {
         this.#assertOpen();
+
+        try {
+            validateAgentEvent(event);
+        } catch (error) {
+            if (error instanceof EventValidationError) {
+                throw new EventStoreError({
+                    code: "event_schema_invalid",
+                    message: error.message,
+                    cause: error,
+                });
+            }
+            throw error;
+        }
 
         try {
             this.#database.exec("BEGIN IMMEDIATE");
@@ -206,7 +220,7 @@ export class SQLiteEventStore implements EventStore {
 
         let events: AgentEvent[];
         try {
-            events = rows.map((row) => JSON.parse(row.payload_json) as AgentEvent);
+            events = rows.map((row) => validateAgentEvent(JSON.parse(row.payload_json)));
             rebuildTaskState(events);
         } catch (error) {
             throw new EventStoreError({

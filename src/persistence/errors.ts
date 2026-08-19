@@ -5,6 +5,7 @@ export type EventStoreErrorCode =
     | "event_id_conflict"
     | "event_sequence_conflict"
     | "event_stream_invalid"
+    | "event_schema_invalid"
     | "event_store_closed"
     | "event_storage_corrupt"
     | "event_store_failure";
