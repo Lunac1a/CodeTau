@@ -8,7 +8,7 @@ than containing agent-loop behavior.
 Start a Session from a Spec. Omit `--session` to generate an ID:
 
 ```powershell
-pnpm cli -- run specs/example.md --session example-run
+pnpm cli -- run specs/bench/fix-greeting/task.md --session example-run
 ```
 
 If a write or validation command requires approval, continue the same Session:

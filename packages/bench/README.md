@@ -24,11 +24,15 @@ Three repeated runs, which produces pass@1 through pass@3:
 pnpm bench -- --runs 3
 ```
 
-Run only the included greeting task:
+Run only one task:
 
 ```powershell
 pnpm bench -- --runs 3 --task fix-greeting
 ```
+
+The default manifest currently contains `fix-greeting`, `clamp-score`, and
+`normalize-email`. Therefore `--runs 3` without `--task` executes nine isolated
+Sessions in total.
 
 The default manifest is `packages/bench/manifest.json`. A different manifest or
 configuration can be selected with `--manifest <path>` and `--config <path>`.

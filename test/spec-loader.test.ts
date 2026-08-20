@@ -48,11 +48,14 @@ function expectSpecError(
     };
 }
 
-test("loads the repository example as contract plus context", async () => {
-    const specUrl = new URL("../specs/example.md", import.meta.url);
+test("loads the repository greeting Bench Spec as contract plus context", async () => {
+    const specUrl = new URL(
+        "../specs/bench/fix-greeting/task.md",
+        import.meta.url,
+    );
     const spec = await loadSpec(fileURLToPath(specUrl));
 
-    assert.equal(spec.contract.id, "example.fix-greeting");
+    assert.equal(spec.contract.id, "bench.fix-greeting");
     assert.equal(spec.contract.budget.maxToolCalls, 40);
     assert.match(spec.digest, /^[a-f0-9]{64}$/);
     assert.match(spec.context, /^\r?\n?# Context/);

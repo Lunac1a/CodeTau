@@ -12,10 +12,15 @@ test("parses a status command", () => {
 
 test("parses run and resume commands", () => {
     assert.deepEqual(
-        parseCliArgs(["run", "specs/example.md", "--session", "session-1"]),
+        parseCliArgs([
+            "run",
+            "specs/bench/fix-greeting/task.md",
+            "--session",
+            "session-1",
+        ]),
         {
             kind: "run",
-            specPath: "specs/example.md",
+            specPath: "specs/bench/fix-greeting/task.md",
             sessionId: "session-1",
         },
     );
@@ -40,7 +45,7 @@ test("rejects incomplete or unsupported commands", () => {
         ["status", ""],
         ["status", "session-123", "extra"],
         ["run"],
-        ["run", "specs/example.md", "--unknown", "value"],
+        ["run", "specs/bench/fix-greeting/task.md", "--unknown", "value"],
         ["resume", "session-1", "--approval", "yes"],
     ];
 

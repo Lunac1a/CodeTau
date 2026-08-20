@@ -3,7 +3,15 @@
   "tasks": [
     {
       "id": "fix-greeting",
-      "specPath": "specs/example.md"
+      "specPath": "specs/bench/fix-greeting/task.md"
+    },
+    {
+      "id": "clamp-score",
+      "specPath": "specs/bench/clamp-score/task.md"
+    },
+    {
+      "id": "normalize-email",
+      "specPath": "specs/bench/normalize-email/task.md"
     }
   ]
 }

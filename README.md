@@ -91,7 +91,7 @@ pnpm model:smoke
 Start and inspect a persisted Agent Session:
 
 ```powershell
-pnpm cli -- run specs/example.md --session example-run
+pnpm cli -- run specs/bench/fix-greeting/task.md --session example-run
 pnpm cli -- status example-run
 pnpm cli -- resume example-run --approval allow-once
 ```
