@@ -269,7 +269,10 @@ function modelFacingResult(result: ToolResult): unknown {
 
 function recoveryGuidance(result: ToolResult): string | undefined {
     if (!result.ok && result.error.code === "patch_context_missing") {
-        return "The patch did not match the current file. Call read_file for that path, copy the exact current text into oldText, and then make the smallest required replacement. Do not repeat the same patch.";
+        return "The patch did not match the current file. Call read_file for that path and copy exact raw source into oldText. Do not add Markdown quotes or backticks unless those characters are present in the file. Then make the smallest required replacement and do not repeat the same patch.";
+    }
+    if (!result.ok && result.error.code === "patch_context_ambiguous") {
+        return "oldText matched more than one location. Inspect error.details.candidateLines, choose the relevant complete source line, and copy it verbatim into oldText; newText should be the complete corrected line. If no candidate is provided, call read_file. Do not add Markdown quotes or backticks unless they exist in the file.";
     }
     if (!result.ok && result.error.code === "repeated_failed_tool_call") {
         return "This exact tool call has already failed. Do not submit it again. Inspect the latest file or error output and choose a different corrective action.";

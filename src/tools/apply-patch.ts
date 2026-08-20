@@ -57,6 +57,28 @@ function failure(code: string, message: string, details?: unknown): ToolResult {
     };
 }
 
+function patchFailureDetails(
+    content: string,
+    edits: readonly StructuredEdit[],
+    editIndex: number,
+    code: string,
+): Record<string, unknown> {
+    const edit = edits[editIndex];
+    if (code !== "patch_context_ambiguous" || edit === undefined) {
+        return { editIndex };
+    }
+    const candidateLines = [
+        ...new Set(
+            content
+                .split(/\r?\n/u)
+                .filter((line) => line.includes(edit.oldText) && line.trim() !== ""),
+        ),
+    ].slice(0, 8);
+    return candidateLines.length === 0
+        ? { editIndex }
+        : { editIndex, candidateLines };
+}
+
 export class ApplyPatchTool implements AgentTool {
     readonly name = "apply_patch";
     readonly description =
@@ -134,15 +156,18 @@ export class ApplyPatchTool implements AgentTool {
                 );
             }
 
-            const patchResult = applyStructuredEdits(
-                originalBuffer.toString("utf8"),
-                patch.edits,
-            );
+            const originalContent = originalBuffer.toString("utf8");
+            const patchResult = applyStructuredEdits(originalContent, patch.edits);
             if (!patchResult.ok) {
                 return failure(
                     patchResult.error.code,
                     patchResult.error.message,
-                    { editIndex: patchResult.error.editIndex },
+                    patchFailureDetails(
+                        originalContent,
+                        patch.edits,
+                        patchResult.error.editIndex,
+                        patchResult.error.code,
+                    ),
                 );
             }
 
