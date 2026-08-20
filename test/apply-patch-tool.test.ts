@@ -62,6 +62,53 @@ test("leaves the file unchanged when patch context is stale", async () => {
     }
 });
 
+test("returns matching source lines for ambiguous patch context", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "codetau-apply-patch-ambiguous-"));
+    await mkdir(join(directory, "src"));
+    const filePath = join(directory, "src", "score.ts");
+    await writeFile(
+        filePath,
+        [
+            "export function clampScore(score: number): number {",
+            "    return Math.max(0, score);",
+            "}",
+            "",
+        ].join("\n"),
+        "utf8",
+    );
+    const sandbox = await WorkspaceSandbox.create(directory, ["src/**"]);
+
+    try {
+        const result = await new ApplyPatchTool(sandbox).execute({
+            path: "src/score.ts",
+            edits: [{ oldText: "score", newText: "value" }],
+        });
+
+        assert.equal(result.ok, false);
+        if (!result.ok) {
+            assert.equal(result.error.code, "patch_context_ambiguous");
+            assert.deepEqual(result.error.details, {
+                editIndex: 0,
+                candidateLines: [
+                    "export function clampScore(score: number): number {",
+                    "    return Math.max(0, score);",
+                ],
+            });
+        }
+        assert.equal(
+            await readFile(filePath, "utf8"),
+            [
+                "export function clampScore(score: number): number {",
+                "    return Math.max(0, score);",
+                "}",
+                "",
+            ].join("\n"),
+        );
+    } finally {
+        await rm(directory, { recursive: true, force: true });
+    }
+});
+
 test("does not overwrite a file changed immediately before commit", async () => {
     const { directory, filePath } = await createTool();
     const sandbox = await WorkspaceSandbox.create(directory, ["src/**"]);

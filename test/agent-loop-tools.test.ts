@@ -200,7 +200,7 @@ test("guides recovery and stops an identical failed tool-call loop", async () =>
         assert.equal(state.final?.message, "Repeated failed tool call loop detected.");
         assert.equal(executions, 2);
         const secondRequestResult = model.requests[1].messages.at(-1);
-        assert.match(secondRequestResult?.content ?? "", /copy the exact current text/i);
+        assert.match(secondRequestResult?.content ?? "", /copy exact raw source/i);
         const finalResult = [
             ...(await store.loadSession("session-repeated-failure")),
         ]
@@ -287,6 +287,65 @@ test("sends compact actual and expected validation feedback to the model", async
             (event) => event.type === "tool_result",
         );
         assert.match(JSON.stringify(storedResult), /STACK_TRACE_SHOULD_NOT_REACH_MODEL/);
+    } finally {
+        await store.close();
+    }
+});
+
+test("guides the model to expand ambiguous patch context", async () => {
+    const ambiguousPatchTool: AgentTool = {
+        name: "apply_patch",
+        description: "Return an ambiguous patch result for testing.",
+        inputSchema: { type: "object" },
+        permission: { action: "workspace-read", risk: "read" },
+        async execute() {
+            return {
+                ok: false,
+                error: {
+                    code: "patch_context_ambiguous",
+                    message: "oldText matched more than once",
+                },
+            };
+        },
+    };
+    const store = new InMemoryEventStore();
+    const model = new FakeModelProvider([
+        {
+            kind: "tool_calls",
+            calls: [
+                {
+                    id: "ambiguous-patch",
+                    name: "apply_patch",
+                    input: {
+                        path: "src/value.ts",
+                        edits: [{ oldText: "value", newText: "nextValue" }],
+                    },
+                },
+            ],
+            usage: { inputTokens: 10, outputTokens: 4 },
+        },
+        {
+            kind: "finish",
+            outcome: "blocked",
+            message: "Recovery guidance inspected.",
+            usage: { inputTokens: 10, outputTokens: 4 },
+        },
+    ]);
+
+    try {
+        await runAgentLoop({
+            sessionId: "session-ambiguous-patch",
+            spec: createTestSpec(),
+            model,
+            eventStore: store,
+            toolRegistry: new ToolRegistry([ambiguousPatchTool]),
+            runtime: createRuntime("ambiguous-patch-event"),
+        });
+
+        const feedback = model.requests[1].messages.at(-1)?.content ?? "";
+        assert.match(feedback, /error\.details\.candidateLines/i);
+        assert.match(feedback, /complete source line/i);
+        assert.match(feedback, /Do not add Markdown quotes or backticks/i);
     } finally {
         await store.close();
     }
