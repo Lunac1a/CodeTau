@@ -54,9 +54,10 @@ machine, model-independent Agent loop, immutable events, SQLite recovery,
 TaskState snapshots, JSONL audit/replay, sandboxed workspace reads, durable
 approvals, structured patches, and the bounded validation feedback loop are
 implemented and tested. A task can reach `completed` only after every Spec
-acceptance command has current passing evidence. Phase 4 currently includes a
-read-only CLI status command and an OpenAI-compatible Model Provider configured
-for local LM Studio. Session Runner orchestration and CodeTau-Bench Mini remain.
+acceptance command has current passing evidence. Phase 4 currently includes an
+OpenAI-compatible Model Provider configured for local LM Studio, a Session
+Runner that assembles the runtime dependencies, and CLI `run`, `resume`, and
+`status` commands. CodeTau-Bench Mini remains.
 
 ## Local model
 
@@ -76,4 +77,12 @@ Verify the real local-model connection, including one complete tool round trip:
 
 ```powershell
 pnpm model:smoke
+```
+
+Start and inspect a persisted Agent Session:
+
+```powershell
+pnpm cli -- run specs/example.md --session example-run
+pnpm cli -- status example-run
+pnpm cli -- resume example-run --approval allow-once
 ```
