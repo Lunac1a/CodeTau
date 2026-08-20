@@ -13,8 +13,8 @@ policy:
     - workspace-outside-write
 acceptance:
   commands:
-    - executable: pnpm
-      args: [test]
+    - executable: node
+      args: [--experimental-strip-types, --test, test/greet.test.ts]
   assertions:
     - All tests pass.
     - No files outside allowedPaths change.
