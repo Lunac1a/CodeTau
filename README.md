@@ -56,8 +56,9 @@ approvals, structured patches, and the bounded validation feedback loop are
 implemented and tested. A task can reach `completed` only after every Spec
 acceptance command has current passing evidence. Phase 4 currently includes an
 OpenAI-compatible Model Provider configured for local LM Studio, a Session
-Runner that assembles the runtime dependencies, and CLI `run`, `resume`, and
-`status` commands. CodeTau-Bench Mini remains.
+Runner that assembles the runtime dependencies, CLI `run`, `resume`, and
+`status` commands, and CodeTau-Bench Mini with isolated repeated runs and
+pass@k reporting.
 
 ## Local model
 
@@ -85,4 +86,10 @@ Start and inspect a persisted Agent Session:
 pnpm cli -- run specs/example.md --session example-run
 pnpm cli -- status example-run
 pnpm cli -- resume example-run --approval allow-once
+```
+
+Run the local mini benchmark when LM Studio is ready:
+
+```powershell
+pnpm bench -- --runs 3
 ```
