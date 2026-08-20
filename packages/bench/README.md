@@ -53,6 +53,14 @@ Each invocation prints the exact report path. Artifacts are stored at:
 ```
 
 The JSON report contains per-run status, duration, tool-call count, approval
-count, validation-call count, success rate, and observed pass@k. `pass@k` is the
-estimated chance that at least one result passes when selecting `k` attempts
-from the recorded runs.
+count, validation-call count, success rate, and observed pass@k. Each run also
+records a `failureCategory` and diagnostics for tool errors, failed patches, and
+failed validations. Task and overall summaries aggregate these values so a low
+pass@1 can be separated into model-turn exhaustion, repeated tool calls,
+validation failures, provider errors, or blocked tasks. `pass@k` is the estimated
+chance that at least one result passes when selecting `k` attempts from the
+recorded runs.
+
+Repeated runs use different Session IDs and isolated workspaces, but the initial
+messages sent to the model are identical. This keeps the reliability comparison
+focused on inference and Agent behavior rather than run-number prompt changes.
