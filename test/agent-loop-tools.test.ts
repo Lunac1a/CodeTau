@@ -69,7 +69,10 @@ test("executes read_file and returns its recorded result to the model", async ()
         );
 
         assert.equal(state.status, "blocked");
-        assert.deepEqual(model.requests[0].availableToolNames, ["read_file"]);
+        assert.deepEqual(
+            model.requests[0].availableTools.map((tool) => tool.name),
+            ["read_file"],
+        );
         assert.equal(model.requests[1].messages.at(-1)?.role, "tool");
         assert.equal(model.requests[1].messages.at(-1)?.toolCallId, "read-call-1");
         assert.match(model.requests[1].messages.at(-1)?.content ?? "", /forty-two/);
@@ -85,6 +88,8 @@ test("records a forbidden tool result without executing the tool", async () => {
     let executed = false;
     const forbiddenTool: AgentTool = {
         name: "fetch_url",
+        description: "Fetch a URL for testing.",
+        inputSchema: { type: "object" },
         permission: { action: "network-access", risk: "read" },
         async execute() {
             executed = true;
@@ -137,6 +142,8 @@ test("pauses a write tool and resumes it after allow-once approval", async () =>
     let executed = false;
     const writeTool: AgentTool = {
         name: "write_file",
+        description: "Write a file for testing.",
+        inputSchema: { type: "object" },
         permission: { action: "workspace-write", risk: "write" },
         async execute() {
             executed = true;
@@ -211,6 +218,8 @@ test("deny resumes the model without executing the pending tool", async () => {
     let executions = 0;
     const writeTool: AgentTool = {
         name: "write_file",
+        description: "Write a file for testing.",
+        inputSchema: { type: "object" },
         permission: { action: "workspace-write", risk: "write" },
         async execute() {
             executions += 1;
@@ -279,6 +288,8 @@ test("allow-session executes later uses of the same action without pausing", asy
     let executions = 0;
     const writeTool: AgentTool = {
         name: "write_file",
+        description: "Write a file for testing.",
+        inputSchema: { type: "object" },
         permission: { action: "workspace-write", risk: "write" },
         async execute(input) {
             executions += 1;
@@ -349,6 +360,8 @@ test("stops before executing a tool call beyond the Spec budget", async () => {
     let executions = 0;
     const echoTool: AgentTool = {
         name: "echo",
+        description: "Echo input for testing.",
+        inputSchema: { type: "object" },
         permission: { action: "workspace-read", risk: "read" },
         async execute(input) {
             executions += 1;
@@ -395,6 +408,8 @@ test("resume completes a recorded tool call before asking the model again", asyn
     let executions = 0;
     const echoTool: AgentTool = {
         name: "echo",
+        description: "Echo input for testing.",
+        inputSchema: { type: "object" },
         permission: { action: "workspace-read", risk: "read" },
         async execute(input) {
             executions += 1;
@@ -466,6 +481,8 @@ test("resume restores allow-session approval from the event history", async () =
     let executions = 0;
     const writeTool: AgentTool = {
         name: "write_file",
+        description: "Write a file for testing.",
+        inputSchema: { type: "object" },
         permission: { action: "workspace-write", risk: "write" },
         async execute(input) {
             executions += 1;

@@ -20,7 +20,13 @@ test("fake model returns deterministic scripted responses", async () => {
 
     const request = {
         messages: [{ role: "user" as const, content: "Fix the task" }],
-        availableToolNames: ["read_file"],
+        availableTools: [
+            {
+                name: "read_file",
+                description: "Read a file.",
+                inputSchema: { type: "object" },
+            },
+        ],
     };
 
     assert.equal((await model.generate(request)).kind, "text");
@@ -33,7 +39,7 @@ test("fake model fails loudly when a test forgets a response", async () => {
     const model = new FakeModelProvider([]);
 
     await assert.rejects(
-        model.generate({ messages: [], availableToolNames: [] }),
+        model.generate({ messages: [], availableTools: [] }),
         /no response left/,
     );
 });

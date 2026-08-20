@@ -8,6 +8,8 @@ import type { AgentTool } from "../src/tools/tool.ts";
 function echoTool(name = "echo"): AgentTool {
     return {
         name,
+        description: `Echo input using ${name}.`,
+        inputSchema: { type: "object" },
         permission: { action: "echo", risk: "read" },
         async execute(input) {
             return { ok: true, output: input };
@@ -23,6 +25,10 @@ test("registers tools and lists their names in stable order", () => {
     assert.equal(registry.get("read_file")?.name, "read_file");
     assert.equal(registry.get("missing"), undefined);
     assert.deepEqual(registry.names(), ["read_file", "write_file"]);
+    assert.deepEqual(
+        registry.definitions().map((definition) => definition.name),
+        ["read_file", "write_file"],
+    );
 });
 
 test("rejects an empty or duplicate tool name", () => {
@@ -64,6 +70,23 @@ test("rejects a tool with an empty permission action", () => {
     );
 });
 
+test("rejects missing model-facing tool metadata", () => {
+    assert.throws(
+        () =>
+            new ToolRegistry([
+                {
+                    ...echoTool(),
+                    description: "",
+                },
+            ]),
+        (error: unknown) => {
+            assert.ok(error instanceof ToolRegistryError);
+            assert.equal(error.code, "tool_description_invalid");
+            return true;
+        },
+    );
+});
+
 test("dispatches a call to its registered tool", async () => {
     const registry = new ToolRegistry([echoTool()]);
     const input = { message: "hello" };
@@ -93,6 +116,8 @@ test("converts a thrown tool error into a structured failure", async () => {
     const registry = new ToolRegistry([
         {
             name: "broken",
+            description: "Always throw an error.",
+            inputSchema: { type: "object" },
             permission: { action: "break-things", risk: "execute" },
             async execute() {
                 throw new Error("The tool broke");

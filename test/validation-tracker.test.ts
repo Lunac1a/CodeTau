@@ -11,6 +11,8 @@ function tool(
 ): AgentTool {
     return {
         name,
+        description: `Test tool ${name}.`,
+        inputSchema: { type: "object" },
         permission: { action: name, risk },
         async execute() {
             return { ok: true, output: null };

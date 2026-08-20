@@ -69,7 +69,7 @@ test("runs multiple model turns and records a blocked terminal state", async () 
             ],
         );
         assert.equal(model.requests.length, 2);
-        assert.equal(model.requests[0].availableToolNames.length, 0);
+        assert.equal(model.requests[0].availableTools.length, 0);
         assert.equal(
             model.requests[1].messages.at(-1)?.content,
             "I need a tool that is not available yet.",
