@@ -90,7 +90,27 @@ function rebuildMessages(
 ): ModelMessage[] {
     const messages = buildInitialMessages(spec, availableToolNames);
 
+    let pendingToolCalls: ToolCall[] = [];
+
+    function flushToolCalls(): void {
+        if (pendingToolCalls.length === 0) {
+            return;
+        }
+        messages.push({
+            role: "assistant",
+            content: null,
+            toolCalls: pendingToolCalls,
+        });
+        pendingToolCalls = [];
+    }
+
     for (const event of events) {
+        if (event.type === "model_tool_call") {
+            pendingToolCalls.push(event.toolCall);
+            continue;
+        }
+
+        flushToolCalls();
         if (event.type === "model_text") {
             messages.push({ role: "assistant", content: event.text });
         } else if (event.type === "tool_result") {
@@ -101,6 +121,8 @@ function rebuildMessages(
             });
         }
     }
+
+    flushToolCalls();
 
     return messages;
 }
@@ -351,6 +373,12 @@ async function continueModelLoop(options: {
                 "An empty tool call response cannot advance the task.",
             );
         }
+
+        messages.push({
+            role: "assistant",
+            content: null,
+            toolCalls: [...response.calls],
+        });
 
         const approvalCalls = response.calls.filter((call) => {
             const tool = toolRegistry.get(call.name);
