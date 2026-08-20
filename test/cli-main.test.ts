@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { runCli } from "../apps/cli/main.ts";
+import type { CodeTauConfig } from "../src/config/loader.ts";
 import { SQLiteEventStore } from "../src/persistence/sqlite-event-store.ts";
 import type { AgentEvent } from "../src/types.ts";
 import { createSessionStartedEvent, createTestSpec } from "./fixtures/spec.ts";
@@ -51,6 +52,20 @@ function analyzingEvents(sessionId: string): readonly AgentEvent[] {
     ];
 }
 
+function config(databasePath: string): CodeTauConfig {
+    const rootDirectory = join(databasePath, "..");
+    return {
+        databasePath,
+        model: "test-model",
+        baseUrl: "http://localhost:1234/v1",
+        commandAllowlist: [],
+        commandTimeoutMs: 1_000,
+        maxOutputBytes: 1_000,
+        sourcePath: join(rootDirectory, "codetau.config.json"),
+        rootDirectory,
+    };
+}
+
 test("runs status against the configured SQLite database", async () => {
     const directory = await mkdtemp(join(tmpdir(), "codetau-cli-main-"));
     const databasePath = join(directory, "codetau.db");
@@ -64,9 +79,10 @@ test("runs status against the configured SQLite database", async () => {
         const stderr = captureWriter();
         const exitCode = await runCli({
             argv: ["status", "session-cli"],
-            databasePath,
+            configPath: "unused.json",
             stdout: stdout.writer,
             stderr: stderr.writer,
+            loadConfig: async () => config(databasePath),
         });
 
         assert.equal(exitCode, 0);
@@ -85,9 +101,12 @@ test("prints usage errors without opening the database", async () => {
 
     const exitCode = await runCli({
         argv: ["unknown"],
-        databasePath: "unused.db",
+        configPath: "unused.json",
         stdout: stdout.writer,
         stderr: stderr.writer,
+        loadConfig: async () => {
+            throw new Error("Configuration should not be loaded");
+        },
         createEventStore: () => {
             openedDatabase = true;
             throw new Error("The database should not be opened");
@@ -96,6 +115,50 @@ test("prints usage errors without opening the database", async () => {
 
     assert.equal(exitCode, 1);
     assert.equal(stdout.read(), "");
-    assert.match(stderr.read(), /Usage: codetau status <session-id>/);
+    assert.match(stderr.read(), /codetau run <spec-path>/);
     assert.equal(openedDatabase, false);
+});
+
+test("routes run commands through the Session Runner", async () => {
+    const stdout = captureWriter();
+    const stderr = captureWriter();
+    const testConfig = config(":memory:");
+    let receivedSpecPath = "";
+
+    const exitCode = await runCli({
+        argv: ["run", "specs/task.md", "--session", "cli-run"],
+        configPath: "unused.json",
+        stdout: stdout.writer,
+        stderr: stderr.writer,
+        loadConfig: async () => testConfig,
+        createEventStore: () => new SQLiteEventStore(":memory:"),
+        createSessionRunner: () => ({
+            async run(options) {
+                receivedSpecPath = options.specPath;
+                return {
+                    sessionId: options.sessionId ?? "generated",
+                    specId: "spec.cli-run",
+                    specPath: options.specPath,
+                    specDigest: "digest",
+                    status: "awaiting_approval",
+                    revision: 0,
+                    lastSequence: 3,
+                    lastEventId: "event-3",
+                    pendingApproval: {
+                        toolCallId: "patch-1",
+                        toolName: "apply_patch",
+                    },
+                };
+            },
+            async resume() {
+                throw new Error("resume should not be called");
+            },
+        }),
+    });
+
+    assert.equal(exitCode, 0);
+    assert.equal(receivedSpecPath, "specs/task.md");
+    assert.match(stdout.read(), /Status: awaiting_approval/);
+    assert.match(stdout.read(), /codetau resume cli-run --approval allow-once/);
+    assert.equal(stderr.read(), "");
 });
