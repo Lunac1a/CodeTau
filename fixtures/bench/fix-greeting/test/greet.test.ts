@@ -9,4 +9,6 @@ test("greets a named user with an exclamation mark", () => {
 
 test("preserves the empty-name greeting", () => {
     assert.equal(greet(""), "Hello!");
+    assert.equal(greet("   "), "Hello!");
 });
+
