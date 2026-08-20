@@ -10,7 +10,7 @@ export type CliCommandResult = Readonly<{
     stderr: string;
 }>;
 
-function formatTaskState(state: TaskState): string {
+export function formatTaskState(state: TaskState): string {
     const lines = [
         `Session: ${state.sessionId}`,
         `Status: ${state.status}`,
