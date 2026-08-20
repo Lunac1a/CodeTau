@@ -98,6 +98,22 @@ test("runs repeated tasks in separate copied workspaces and writes a report", as
             output.report.results.map((result) => result.status),
             ["blocked", "blocked"],
         );
+        assert.deepEqual(output.report.overall.failureCategories, { blocked: 2 });
+        assert.equal(output.report.results[0].failureCategory, "blocked");
+        assert.deepEqual(output.report.results[0].diagnostics, {
+            toolErrors: 0,
+            patchFailures: 0,
+            failedValidations: 0,
+        });
+        assert.deepEqual(
+            model.requests[0].messages,
+            model.requests[1].messages,
+            "Repeated Bench runs must send identical initial model messages",
+        );
+        assert.match(
+            model.requests[0].messages[0]?.content ?? "",
+            /Goal: Exercise an isolated Bench run\./,
+        );
         await access(output.reportPath);
         assert.equal(
             await readFile(

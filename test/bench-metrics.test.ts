@@ -18,6 +18,12 @@ function result(runNumber: number, passed: boolean): BenchRunResult {
         toolCalls: runNumber,
         approvals: 0,
         validationCalls: passed ? 1 : 0,
+        failureCategory: passed ? "none" : "model_turn_budget",
+        diagnostics: {
+            toolErrors: passed ? 0 : 1,
+            patchFailures: 0,
+            failedValidations: 0,
+        },
         finalMessage: passed ? "passed" : "failed",
     };
 }
@@ -39,4 +45,6 @@ test("summarizes repeated task runs", () => {
     assert.deepEqual(summary.passAtK, { "pass@1": 0.5, "pass@2": 1 });
     assert.equal(summary.averageDurationMs, 150);
     assert.equal(summary.averageToolCalls, 1.5);
+    assert.deepEqual(summary.failureCategories, { model_turn_budget: 1 });
+    assert.equal(summary.toolErrors, 1);
 });

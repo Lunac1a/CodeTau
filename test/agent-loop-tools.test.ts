@@ -155,6 +155,69 @@ test("records a forbidden tool result without executing the tool", async () => {
     }
 });
 
+test("guides recovery and stops an identical failed tool-call loop", async () => {
+    let executions = 0;
+    const failingTool: AgentTool = {
+        name: "fragile_edit",
+        description: "Apply an edit that always misses its context for testing.",
+        inputSchema: { type: "object" },
+        permission: { action: "workspace-read", risk: "read" },
+        async execute() {
+            executions += 1;
+            return {
+                ok: false,
+                error: {
+                    code: "patch_context_missing",
+                    message: "The requested oldText was not found.",
+                },
+            };
+        },
+    };
+    const repeatedCall = (id: string) => ({
+        kind: "tool_calls" as const,
+        calls: [{ id, name: "fragile_edit", input: { path: "src/value.ts" } }],
+        usage: { inputTokens: 10, outputTokens: 4 },
+    });
+    const store = new InMemoryEventStore();
+    const model = new FakeModelProvider([
+        repeatedCall("repeat-1"),
+        repeatedCall("repeat-2"),
+        repeatedCall("repeat-3"),
+        repeatedCall("repeat-4"),
+    ]);
+
+    try {
+        const state = await runAgentLoop({
+            sessionId: "session-repeated-failure",
+            spec: createTestSpec({ maxModelTurns: 8, maxToolCalls: 8 }),
+            model,
+            eventStore: store,
+            toolRegistry: new ToolRegistry([failingTool]),
+            runtime: createRuntime("repeated-failure-event"),
+        });
+
+        assert.equal(state.status, "failed");
+        assert.equal(state.final?.message, "Repeated failed tool call loop detected.");
+        assert.equal(executions, 2);
+        const secondRequestResult = model.requests[1].messages.at(-1);
+        assert.match(secondRequestResult?.content ?? "", /copy the exact current text/i);
+        const finalResult = [
+            ...(await store.loadSession("session-repeated-failure")),
+        ]
+            .reverse()
+            .find(
+                (event): event is Extract<AgentEvent, { type: "tool_result" }> =>
+                    event.type === "tool_result",
+            );
+        assert.equal(
+            finalResult?.result.ok === false ? finalResult.result.error.code : undefined,
+            "repeated_failed_tool_call",
+        );
+    } finally {
+        await store.close();
+    }
+});
+
 test("pauses a write tool and resumes it after allow-once approval", async () => {
     let executed = false;
     const writeTool: AgentTool = {

@@ -70,6 +70,11 @@ test("runs multiple model turns and records a blocked terminal state", async () 
         );
         assert.equal(model.requests.length, 2);
         assert.equal(model.requests[0].availableTools.length, 0);
+        const systemMessage = model.requests[0].messages[0];
+        assert.equal(systemMessage?.role, "system");
+        assert.match(systemMessage?.content ?? "", /Acceptance commands:/);
+        assert.match(systemMessage?.content ?? "", /copy oldText exactly/i);
+        assert.match(systemMessage?.content ?? "", /Do not weaken or rewrite acceptance tests/i);
         assert.equal(
             model.requests[1].messages.at(-1)?.content,
             "I need a tool that is not available yet.",
