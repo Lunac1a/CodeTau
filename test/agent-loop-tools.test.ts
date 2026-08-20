@@ -73,9 +73,26 @@ test("executes read_file and returns its recorded result to the model", async ()
             model.requests[0].availableTools.map((tool) => tool.name),
             ["read_file"],
         );
-        assert.equal(model.requests[1].messages.at(-1)?.role, "tool");
-        assert.equal(model.requests[1].messages.at(-1)?.toolCallId, "read-call-1");
-        assert.match(model.requests[1].messages.at(-1)?.content ?? "", /forty-two/);
+        assert.deepEqual(model.requests[1].messages.at(-2), {
+            role: "assistant",
+            content: null,
+            toolCalls: [
+                {
+                    id: "read-call-1",
+                    name: "read_file",
+                    input: { path: "src/answer.txt" },
+                },
+            ],
+        });
+        const toolResultMessage = model.requests[1].messages.at(-1);
+        assert.equal(toolResultMessage?.role, "tool");
+        assert.equal(
+            toolResultMessage?.role === "tool"
+                ? toolResultMessage.toolCallId
+                : undefined,
+            "read-call-1",
+        );
+        assert.match(toolResultMessage?.content ?? "", /forty-two/);
         assert.equal(resultEvent?.toolCallId, "read-call-1");
         assert.equal(resultEvent?.result.ok, true);
     } finally {
