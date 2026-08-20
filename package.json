@@ -8,7 +8,7 @@
     "node": ">=22.6"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --experimental-sqlite --test --test-isolation=none test/state.test.ts test/model.test.ts test/spec-schema.test.ts test/spec-digest.test.ts test/spec-loader.test.ts test/event-validation.test.ts test/event-replay.test.ts test/in-memory-event-store.test.ts test/sqlite-event-store.test.ts test/task-state-snapshot.test.ts test/jsonl.test.ts test/agent-loop.test.ts test/agent-loop-tools.test.ts test/tool-registry.test.ts test/permission-policy.test.ts test/workspace-sandbox.test.ts test/read-file-tool.test.ts test/structured-patch.test.ts test/apply-patch-tool.test.ts test/apply-patch-loop.test.ts test/run-validation-tool.test.ts test/validation-tracker.test.ts test/phase-two-acceptance.test.ts test/phase-three-acceptance.test.ts",
+    "test": "node --experimental-strip-types --experimental-sqlite --test --test-isolation=none test/state.test.ts test/model.test.ts test/spec-schema.test.ts test/spec-digest.test.ts test/spec-loader.test.ts test/event-validation.test.ts test/event-replay.test.ts test/in-memory-event-store.test.ts test/sqlite-event-store.test.ts test/task-state-snapshot.test.ts test/jsonl.test.ts test/agent-loop.test.ts test/agent-loop-tools.test.ts test/tool-registry.test.ts test/permission-policy.test.ts test/workspace-sandbox.test.ts test/read-file-tool.test.ts test/structured-patch.test.ts test/apply-patch-tool.test.ts test/apply-patch-loop.test.ts test/run-validation-tool.test.ts test/validation-tracker.test.ts test/phase-two-acceptance.test.ts test/phase-three-acceptance.test.ts test/cli-args.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
