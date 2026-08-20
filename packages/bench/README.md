@@ -41,6 +41,9 @@ configuration can be selected with `--manifest <path>` and `--config <path>`.
   but only inside that isolated copy.
 - A run passes only when the Agent reaches `completed`, which still requires
   current passing evidence for every Spec acceptance command.
+- The Agent Loop completes immediately when all current validation evidence is
+  present, so a solved run cannot spend another model turn editing the passing
+  workspace or fail while trying to emit a separate completion call.
 
 ## Results
 

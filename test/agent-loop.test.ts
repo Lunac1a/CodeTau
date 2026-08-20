@@ -9,6 +9,8 @@ import {
 } from "../src/agent-loop/run.ts";
 import { InMemoryEventStore } from "../src/persistence/in-memory-event-store.ts";
 import type { LoadedSpec } from "../src/spec/types.ts";
+import { ToolRegistry } from "../src/tools/registry.ts";
+import type { AgentTool } from "../src/tools/tool.ts";
 import type { AgentEvent } from "../src/types.ts";
 import { FakeModelProvider } from "./fakes/fake-model.ts";
 import { createSessionStartedEvent, createTestSpec } from "./fixtures/spec.ts";
@@ -72,9 +74,9 @@ test("runs multiple model turns and records a blocked terminal state", async () 
         assert.equal(model.requests[0].availableTools.length, 0);
         const systemMessage = model.requests[0].messages[0];
         assert.equal(systemMessage?.role, "system");
-        assert.match(systemMessage?.content ?? "", /Acceptance commands:/);
+        assert.match(systemMessage?.content ?? "", /Validation commands:/);
         assert.match(systemMessage?.content ?? "", /copy oldText exactly/i);
-        assert.match(systemMessage?.content ?? "", /Do not weaken or rewrite acceptance tests/i);
+        assert.match(systemMessage?.content ?? "", /without weakening acceptance tests/i);
         assert.equal(
             model.requests[1].messages.at(-1)?.content,
             "I need a tool that is not available yet.",
@@ -466,6 +468,84 @@ test("resume completes a terminal state that was missing its final event", async
             (await store.loadSession("session-terminal-recovery")).at(-1)?.type,
             "final",
         );
+    } finally {
+        await store.close();
+    }
+});
+
+test("resume automatically completes current passing validation evidence", async () => {
+    const store = new InMemoryEventStore();
+    const spec = createSpec();
+    const validationTool: AgentTool = {
+        name: "run_validation",
+        description: "Represent the recorded validation command.",
+        inputSchema: { type: "object" },
+        permission: { action: "command-execute", risk: "execute" },
+        async execute() {
+            throw new Error("Recorded validation must not execute again");
+        },
+    };
+    const historicalEvents: AgentEvent[] = [
+        createSessionStartedEvent({
+            eventId: "validated-history-1",
+            sessionId: "session-validated-recovery",
+            spec,
+            timestamp: "2026-08-19T00:00:00.000Z",
+        }),
+        {
+            id: "validated-history-2",
+            sessionId: "session-validated-recovery",
+            sequence: 2,
+            timestamp: "2026-08-19T00:00:01.000Z",
+            type: "state_changed",
+            from: "created",
+            to: "analyzing",
+            reason: "Analysis started.",
+            sourceEventId: "validated-history-1",
+        },
+        {
+            id: "validated-history-3",
+            sessionId: "session-validated-recovery",
+            sequence: 3,
+            timestamp: "2026-08-19T00:00:02.000Z",
+            type: "model_tool_call",
+            toolCall: {
+                id: "recorded-validation",
+                name: "run_validation",
+                input: { commandIndex: 0 },
+            },
+        },
+        {
+            id: "validated-history-4",
+            sessionId: "session-validated-recovery",
+            sequence: 4,
+            timestamp: "2026-08-19T00:00:03.000Z",
+            type: "tool_result",
+            toolCallId: "recorded-validation",
+            result: {
+                ok: true,
+                output: { commandIndex: 0, passed: true },
+            },
+        },
+    ];
+    for (const event of historicalEvents) {
+        await store.append(event);
+    }
+    const model = new FakeModelProvider([]);
+
+    try {
+        const state = await resumeAgentLoop({
+            sessionId: "session-validated-recovery",
+            spec,
+            model,
+            eventStore: store,
+            toolRegistry: new ToolRegistry([validationTool]),
+            runtime: createRuntime("validated-recovery"),
+        });
+
+        assert.equal(state.status, "completed");
+        assert.equal(model.requests.length, 0);
+        assert.equal(state.final?.message, "The task completed automatically after all acceptance commands passed.");
     } finally {
         await store.close();
     }

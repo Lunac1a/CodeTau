@@ -98,12 +98,6 @@ test("phase three: approved patch plus all validations can complete the task", a
             ],
             usage: { inputTokens: 35, outputTokens: 6 },
         },
-        {
-            kind: "finish",
-            outcome: "completed",
-            message: "The approved change passed every validation command.",
-            usage: { inputTokens: 40, outputTokens: 8 },
-        },
     ]);
 
     try {
@@ -144,6 +138,8 @@ test("phase three: approved patch plus all validations can complete the task", a
 
         assert.equal(completed.status, "completed");
         assert.equal(completed.final?.status, "completed");
+        assert.equal(model.requests.length, 3);
+        assert.equal(model.remainingResponses, 0);
         assert.equal(
             events.filter(
                 (event) =>

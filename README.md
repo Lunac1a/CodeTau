@@ -61,7 +61,9 @@ Runner that assembles the runtime dependencies, CLI `run`, `resume`, and
 pass@k reporting. Phase 4.1 reliability hardening keeps repeated Bench prompts
 identical, grounds the model with the complete acceptance contract, adds
 tool-error recovery guidance, stops identical failed-call loops, and reports
-structured failure categories.
+structured failure categories. The Agent Loop now owns completion: once every
+acceptance command has current passing evidence, it immediately freezes the
+validated result and completes without requiring another model turn.
 
 ## Local model
 

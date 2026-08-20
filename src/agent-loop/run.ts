@@ -70,37 +70,23 @@ function buildInitialMessages(
             content: [
                 "You are executing a bounded coding task inside a sandboxed workspace.",
                 `Goal: ${spec.contract.goal}`,
-                "Current state: analyzing",
                 toolDescription,
-                `Allowed workspace paths: ${spec.contract.workspace.allowedPaths.join(", ")}`,
-                `Forbidden actions: ${spec.contract.policy.forbiddenActions.join(", ") || "none"}`,
-                "Required phases:",
-                ...spec.contract.phases.map(
-                    (phase, index) =>
-                        `${index + 1}. ${phase.id}: ${phase.description}`,
-                ),
-                "Acceptance commands:",
+                `Scope: ${spec.contract.workspace.allowedPaths.join(", ")}. Forbidden: ${spec.contract.policy.forbiddenActions.join(", ") || "none"}.`,
+                `Phases: ${spec.contract.phases.map((phase) => `${phase.id} (${phase.description})`).join(" -> ")}.`,
+                "Validation commands:",
                 ...(spec.contract.acceptance.commands.length === 0
                     ? ["- none"]
                     : spec.contract.acceptance.commands.map(
                           (command, index) =>
                               `- commandIndex ${index}: ${JSON.stringify([command.executable, ...command.args])}`,
                       )),
-                "Acceptance assertions:",
-                ...(spec.contract.acceptance.assertions.length === 0
-                    ? ["- none"]
-                    : spec.contract.acceptance.assertions.map(
-                          (assertion) => `- ${assertion}`,
-                      )),
-                "Execution rules:",
-                "- Inspect the relevant implementation and tests before editing.",
-                "- Fix the implementation. Do not weaken or rewrite acceptance tests unless the task explicitly requires a test change.",
-                "- For apply_patch, copy oldText exactly from the latest read_file result and change only the smallest necessary text.",
-                "- Never repeat an identical tool call after it fails. Read the returned error and choose a corrective action.",
-                "- After a failed validation, use its actual and expected output to make one targeted correction.",
-                "- After every successful workspace write, run every acceptance command using its commandIndex.",
-                "Request at most one approval-requiring tool at a time.",
-                "Declare completed only after every acceptance command has current passing evidence.",
+                `Assertions: ${spec.contract.acceptance.assertions.join("; ") || "none"}`,
+                "Rules:",
+                "1. Read the relevant implementation and tests, then fix the implementation without weakening acceptance tests.",
+                "2. For apply_patch, copy oldText exactly from the latest read_file and make the smallest necessary change.",
+                "3. On failure, use the returned error or actual/expected output; do not repeat the same failed call.",
+                "4. When the fix is ready, run every validation command once using its commandIndex.",
+                "5. Request approval-requiring tools one at a time. Stop editing when validation passes; the runtime completes automatically.",
             ].join("\n"),
         },
         {
@@ -362,6 +348,34 @@ async function finalizeModelResponse(
     );
 }
 
+async function completeValidatedTask(
+    writer: EventWriter,
+    sourceEventId: string,
+    message = "The task completed automatically after all acceptance commands passed.",
+): Promise<TaskState> {
+    const validatingEvent = await writer.changeState(
+        "validating",
+        "All Spec acceptance commands have current passing evidence.",
+        sourceEventId,
+    );
+    return writer.finalize(
+        "completed",
+        message,
+        validatingEvent.id,
+        "All required validation commands passed after the latest workspace change.",
+    );
+}
+
+async function completeIfValidated(
+    writer: EventWriter,
+    validationTracker: ValidationTracker,
+    sourceEventId: string,
+): Promise<TaskState | undefined> {
+    return validationTracker.isComplete()
+        ? completeValidatedTask(writer, sourceEventId)
+        : undefined;
+}
+
 async function continueModelLoop(options: {
     spec: LoadedSpec;
     model: ModelProvider;
@@ -569,6 +583,14 @@ async function continueModelLoop(options: {
                 failedCalls.set(signature, previousFailures + 1);
             }
             validationTracker.record(toolCall, result);
+            const completed = await completeIfValidated(
+                writer,
+                validationTracker,
+                resultEvent.id,
+            );
+            if (completed !== undefined) {
+                return completed;
+            }
             if (!result.ok && previousFailures >= 3) {
                 return writer.finalize(
                     "failed",
@@ -832,6 +854,10 @@ export async function resumeAgentLoop(options: RunAgentLoopOptions): Promise<Tas
         return writer.appendFinal(state.status, message);
     }
 
+    if (state.status === "analyzing" && validationTracker.isComplete()) {
+        return completeValidatedTask(writer, lastEvent.id);
+    }
+
     if (state.status === "awaiting_approval") {
         if (options.approvalResponse === undefined) {
             return state;
@@ -883,6 +909,14 @@ export async function resumeAgentLoop(options: RunAgentLoopOptions): Promise<Tas
             content: serializeToolResult(result),
         });
         validationTracker.record(pendingCall, result);
+        const completed = await completeIfValidated(
+            writer,
+            validationTracker,
+            resultEvent.id,
+        );
+        if (completed !== undefined) {
+            return completed;
+        }
         const retryFailure = await failIfRetryBudgetExceeded(
             options.spec,
             writer,
@@ -973,6 +1007,14 @@ export async function resumeAgentLoop(options: RunAgentLoopOptions): Promise<Tas
             content: serializeToolResult(result),
         });
         validationTracker.record(lastEvent.toolCall, result);
+        const completed = await completeIfValidated(
+            writer,
+            validationTracker,
+            resultEvent.id,
+        );
+        if (completed !== undefined) {
+            return completed;
+        }
         const retryFailure = await failIfRetryBudgetExceeded(
             options.spec,
             writer,
