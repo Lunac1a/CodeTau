@@ -289,7 +289,7 @@ async function continueModelLoop(options: {
         try {
             response = await model.generate({
                 messages: [...messages],
-                availableToolNames: toolRegistry.names(),
+                availableTools: toolRegistry.definitions(),
             });
         } catch (error) {
             const errorEvent = await writer.append({

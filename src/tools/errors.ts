@@ -1,6 +1,8 @@
 export type ToolRegistryErrorCode =
     | "tool_name_invalid"
     | "tool_action_invalid"
+    | "tool_description_invalid"
+    | "tool_schema_invalid"
     | "tool_already_registered";
 
 export class ToolRegistryError extends Error {

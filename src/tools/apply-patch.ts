@@ -59,6 +59,32 @@ function failure(code: string, message: string, details?: unknown): ToolResult {
 
 export class ApplyPatchTool implements AgentTool {
     readonly name = "apply_patch";
+    readonly description =
+        "Apply ordered exact-text replacements to an existing workspace file.";
+    readonly inputSchema = {
+        type: "object",
+        properties: {
+            path: {
+                type: "string",
+                description: "Workspace-relative file path.",
+            },
+            edits: {
+                type: "array",
+                minItems: 1,
+                items: {
+                    type: "object",
+                    properties: {
+                        oldText: { type: "string" },
+                        newText: { type: "string" },
+                    },
+                    required: ["oldText", "newText"],
+                    additionalProperties: false,
+                },
+            },
+        },
+        required: ["path", "edits"],
+        additionalProperties: false,
+    } as const;
     readonly permission = { action: "workspace-write", risk: "write" } as const;
     private readonly sandbox: WorkspaceSandbox;
     private readonly maxBytes: number;

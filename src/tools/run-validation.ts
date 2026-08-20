@@ -42,6 +42,20 @@ function commandKey(executable: string): string {
 
 export class RunValidationTool implements AgentTool {
     readonly name = "run_validation";
+    readonly description =
+        "Run one acceptance command declared by the task Spec using its zero-based index.";
+    readonly inputSchema = {
+        type: "object",
+        properties: {
+            commandIndex: {
+                type: "integer",
+                minimum: 0,
+                description: "Zero-based index of the Spec acceptance command.",
+            },
+        },
+        required: ["commandIndex"],
+        additionalProperties: false,
+    } as const;
     readonly permission = { action: "command-execute", risk: "execute" } as const;
     private readonly options: ValidationToolOptions;
     private readonly allowedCommands: ReadonlySet<string>;
