@@ -11,8 +11,9 @@ import { SQLiteEventStore } from "../../src/persistence/sqlite-event-store.ts";
 import { loadSpec } from "../../src/spec/loader.ts";
 import { SessionRunner } from "../../src/session/runner.ts";
 import type { AgentEvent } from "../../src/types.ts";
-import { summarizeTask } from "./metrics.ts";
+import { countFailureCategories, summarizeTask } from "./metrics.ts";
 import type {
+    BenchFailureCategory,
     BenchManifest,
     BenchReport,
     BenchRunResult,
@@ -90,6 +91,91 @@ function countValidationCalls(events: readonly AgentEvent[]): number {
     ).length;
 }
 
+function toolNamesByCallId(events: readonly AgentEvent[]): Map<string, string> {
+    const names = new Map<string, string>();
+    for (const event of events) {
+        if (event.type === "model_tool_call") {
+            names.set(event.toolCall.id, event.toolCall.name);
+        }
+    }
+    return names;
+}
+
+function validationPassed(output: unknown): boolean | undefined {
+    if (typeof output !== "object" || output === null) {
+        return undefined;
+    }
+    const passed = Reflect.get(output, "passed");
+    return typeof passed === "boolean" ? passed : undefined;
+}
+
+function runDiagnostics(events: readonly AgentEvent[]) {
+    const toolNames = toolNamesByCallId(events);
+    let toolErrors = 0;
+    let patchFailures = 0;
+    let failedValidations = 0;
+    for (const event of events) {
+        if (event.type !== "tool_result") {
+            continue;
+        }
+        const toolName = toolNames.get(event.toolCallId);
+        if (!event.result.ok) {
+            toolErrors += 1;
+            if (toolName === "apply_patch") {
+                patchFailures += 1;
+            }
+        } else if (
+            toolName === "run_validation" &&
+            validationPassed(event.result.output) === false
+        ) {
+            failedValidations += 1;
+        }
+    }
+    return { toolErrors, patchFailures, failedValidations };
+}
+
+function failureCategory(
+    status: "completed" | "failed" | "blocked",
+    events: readonly AgentEvent[],
+): BenchFailureCategory {
+    if (status === "completed") {
+        return "none";
+    }
+    if (
+        events.some(
+            (event) =>
+                event.type === "tool_result" &&
+                !event.result.ok &&
+                event.result.error.code === "repeated_failed_tool_call",
+        )
+    ) {
+        return "repeated_tool_call";
+    }
+    const exhausted = [...events].reverse().find(
+        (event): event is Extract<AgentEvent, { type: "budget_exhausted" }> =>
+            event.type === "budget_exhausted",
+    );
+    if (exhausted?.budget === "model_turns") {
+        return "model_turn_budget";
+    }
+    if (exhausted?.budget === "tool_calls") {
+        return "tool_call_budget";
+    }
+    if (exhausted?.budget === "retries") {
+        return "validation_retry_budget";
+    }
+    if (events.some((event) => event.type === "model_error")) {
+        return "model_provider_error";
+    }
+    if (status === "blocked") {
+        return "blocked";
+    }
+    if (runDiagnostics(events).failedValidations > 0) {
+        return "validation_failure";
+    }
+    return "agent_failure";
+}
+
 function resultFrom(options: {
     taskId: string;
     runNumber: number;
@@ -114,6 +200,8 @@ function resultFrom(options: {
             (event) => event.type === "approval_resolved",
         ).length,
         validationCalls: countValidationCalls(options.events),
+        failureCategory: failureCategory(options.state.status, options.events),
+        diagnostics: runDiagnostics(options.events),
         finalMessage: options.state.final.message,
     };
 }
@@ -172,7 +260,6 @@ export async function runBench(options: BenchRunnerOptions): Promise<BenchRunOut
                 });
 
                 const materializedContract = structuredClone(sourceSpec.contract);
-                materializedContract.id = `${sourceSpec.contract.id}.bench-${runNumber}`;
                 materializedContract.workspace.root = "workspace";
                 const specPath = join(runDirectory, "task.md");
                 await writeFile(
@@ -254,6 +341,19 @@ export async function runBench(options: BenchRunnerOptions): Promise<BenchRunOut
             successRate: successes / results.length,
             averageDurationMs: average(results.map((result) => result.durationMs)),
             averageToolCalls: average(results.map((result) => result.toolCalls)),
+            failureCategories: countFailureCategories(results),
+            toolErrors: results.reduce(
+                (sum, result) => sum + result.diagnostics.toolErrors,
+                0,
+            ),
+            patchFailures: results.reduce(
+                (sum, result) => sum + result.diagnostics.patchFailures,
+                0,
+            ),
+            failedValidations: results.reduce(
+                (sum, result) => sum + result.diagnostics.failedValidations,
+                0,
+            ),
         },
     };
     const reportPath = join(benchmarkDirectory, "report.json");

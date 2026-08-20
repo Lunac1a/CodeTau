@@ -39,6 +39,20 @@ function average(values: readonly number[]): number {
     return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
+export function countFailureCategories(
+    results: readonly BenchRunResult[],
+): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const result of results) {
+        if (result.failureCategory === "none") {
+            continue;
+        }
+        counts[result.failureCategory] =
+            (counts[result.failureCategory] ?? 0) + 1;
+    }
+    return counts;
+}
+
 export function summarizeTask(
     taskId: string,
     results: readonly BenchRunResult[],
@@ -59,5 +73,18 @@ export function summarizeTask(
         passAtK,
         averageDurationMs: average(results.map((result) => result.durationMs)),
         averageToolCalls: average(results.map((result) => result.toolCalls)),
+        failureCategories: countFailureCategories(results),
+        toolErrors: results.reduce(
+            (sum, result) => sum + result.diagnostics.toolErrors,
+            0,
+        ),
+        patchFailures: results.reduce(
+            (sum, result) => sum + result.diagnostics.patchFailures,
+            0,
+        ),
+        failedValidations: results.reduce(
+            (sum, result) => sum + result.diagnostics.failedValidations,
+            0,
+        ),
     };
 }

@@ -10,6 +10,23 @@ export type BenchManifest = Readonly<{
     tasks: readonly BenchTask[];
 }>;
 
+export type BenchFailureCategory =
+    | "none"
+    | "blocked"
+    | "model_turn_budget"
+    | "tool_call_budget"
+    | "validation_retry_budget"
+    | "repeated_tool_call"
+    | "model_provider_error"
+    | "validation_failure"
+    | "agent_failure";
+
+export type BenchRunDiagnostics = Readonly<{
+    toolErrors: number;
+    patchFailures: number;
+    failedValidations: number;
+}>;
+
 export type BenchRunResult = Readonly<{
     taskId: string;
     runNumber: number;
@@ -20,6 +37,8 @@ export type BenchRunResult = Readonly<{
     toolCalls: number;
     approvals: number;
     validationCalls: number;
+    failureCategory: BenchFailureCategory;
+    diagnostics: BenchRunDiagnostics;
     finalMessage: string;
 }>;
 
@@ -31,6 +50,10 @@ export type BenchTaskSummary = Readonly<{
     passAtK: Readonly<Record<string, number>>;
     averageDurationMs: number;
     averageToolCalls: number;
+    failureCategories: Readonly<Record<string, number>>;
+    toolErrors: number;
+    patchFailures: number;
+    failedValidations: number;
 }>;
 
 export type BenchReport = Readonly<{
@@ -48,5 +71,9 @@ export type BenchReport = Readonly<{
         successRate: number;
         averageDurationMs: number;
         averageToolCalls: number;
+        failureCategories: Readonly<Record<string, number>>;
+        toolErrors: number;
+        patchFailures: number;
+        failedValidations: number;
     }>;
 }>;

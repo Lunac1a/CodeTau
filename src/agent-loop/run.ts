@@ -68,12 +68,39 @@ function buildInitialMessages(
         {
             role: "system",
             content: [
-                `Task ID: ${spec.contract.id}`,
+                "You are executing a bounded coding task inside a sandboxed workspace.",
                 `Goal: ${spec.contract.goal}`,
                 "Current state: analyzing",
                 toolDescription,
+                `Allowed workspace paths: ${spec.contract.workspace.allowedPaths.join(", ")}`,
+                `Forbidden actions: ${spec.contract.policy.forbiddenActions.join(", ") || "none"}`,
+                "Required phases:",
+                ...spec.contract.phases.map(
+                    (phase, index) =>
+                        `${index + 1}. ${phase.id}: ${phase.description}`,
+                ),
+                "Acceptance commands:",
+                ...(spec.contract.acceptance.commands.length === 0
+                    ? ["- none"]
+                    : spec.contract.acceptance.commands.map(
+                          (command, index) =>
+                              `- commandIndex ${index}: ${JSON.stringify([command.executable, ...command.args])}`,
+                      )),
+                "Acceptance assertions:",
+                ...(spec.contract.acceptance.assertions.length === 0
+                    ? ["- none"]
+                    : spec.contract.acceptance.assertions.map(
+                          (assertion) => `- ${assertion}`,
+                      )),
+                "Execution rules:",
+                "- Inspect the relevant implementation and tests before editing.",
+                "- Fix the implementation. Do not weaken or rewrite acceptance tests unless the task explicitly requires a test change.",
+                "- For apply_patch, copy oldText exactly from the latest read_file result and change only the smallest necessary text.",
+                "- Never repeat an identical tool call after it fails. Read the returned error and choose a corrective action.",
+                "- After a failed validation, use its actual and expected output to make one targeted correction.",
+                "- After every successful workspace write, run every acceptance command using its commandIndex.",
                 "Request at most one approval-requiring tool at a time.",
-                "A completed outcome requires external validation and will not be accepted yet.",
+                "Declare completed only after every acceptance command has current passing evidence.",
             ].join("\n"),
         },
         {
@@ -141,8 +168,76 @@ function countToolCalls(events: readonly AgentEvent[]): number {
     return events.filter((event) => event.type === "model_tool_call").length;
 }
 
+function recoveryGuidance(result: ToolResult): string | undefined {
+    if (!result.ok && result.error.code === "patch_context_missing") {
+        return "The patch did not match the current file. Call read_file for that path, copy the exact current text into oldText, and then make the smallest required replacement. Do not repeat the same patch.";
+    }
+    if (!result.ok && result.error.code === "repeated_failed_tool_call") {
+        return "This exact tool call has already failed. Do not submit it again. Inspect the latest file or error output and choose a different corrective action.";
+    }
+    if (
+        result.ok &&
+        typeof result.output === "object" &&
+        result.output !== null &&
+        Reflect.get(result.output, "passed") === false
+    ) {
+        return "Validation failed. Read the failure output carefully, preserve the tests, compare actual with expected, and make one targeted implementation change before validating again.";
+    }
+    return undefined;
+}
+
 function serializeToolResult(result: ToolResult): string {
-    return JSON.stringify(result);
+    const guidance = recoveryGuidance(result);
+    return JSON.stringify(
+        guidance === undefined ? result : { ...result, recoveryGuidance: guidance },
+    );
+}
+
+function canonicalJsonValue(value: unknown): unknown {
+    if (Array.isArray(value)) {
+        return value.map(canonicalJsonValue);
+    }
+    if (typeof value === "object" && value !== null) {
+        return Object.fromEntries(
+            Object.entries(value)
+                .sort(([left], [right]) => left.localeCompare(right))
+                .map(([key, child]) => [key, canonicalJsonValue(child)]),
+        );
+    }
+    return value;
+}
+
+function toolCallSignature(call: ToolCall): string {
+    return `${call.name}:${JSON.stringify(canonicalJsonValue(call.input))}`;
+}
+
+function failedToolCallCounts(messages: readonly ModelMessage[]): Map<string, number> {
+    const signatures = new Map<string, string>();
+    const counts = new Map<string, number>();
+    for (const message of messages) {
+        if (message.role === "assistant" && message.content === null) {
+            for (const call of message.toolCalls) {
+                signatures.set(call.id, toolCallSignature(call));
+            }
+            continue;
+        }
+        if (message.role !== "tool") {
+            continue;
+        }
+        const signature = signatures.get(message.toolCallId);
+        if (signature === undefined) {
+            continue;
+        }
+        try {
+            const parsed = JSON.parse(message.content) as { ok?: unknown };
+            if (parsed.ok === false) {
+                counts.set(signature, (counts.get(signature) ?? 0) + 1);
+            }
+        } catch {
+            // Historical non-JSON tool messages cannot contribute to loop detection.
+        }
+    }
+    return counts;
 }
 
 function safeErrorMessage(error: unknown): string {
@@ -289,6 +384,7 @@ async function continueModelLoop(options: {
     } = options;
     let modelTurns = options.initialModelTurns;
     let toolCalls = options.initialToolCalls;
+    const failedCalls = failedToolCallCounts(messages);
 
     while (true) {
         if (modelTurns >= spec.contract.budget.maxModelTurns) {
@@ -428,11 +524,27 @@ async function continueModelLoop(options: {
                 toolCall,
             });
             toolCalls += 1;
-            const outcome = await executeToolCall(
-                toolCall,
-                toolRegistry,
-                permissionPolicy,
-            );
+            const signature = toolCallSignature(toolCall);
+            const previousFailures = failedCalls.get(signature) ?? 0;
+            const outcome =
+                previousFailures >= 2
+                    ? {
+                          kind: "result" as const,
+                          result: {
+                              ok: false as const,
+                              error: {
+                                  code: "repeated_failed_tool_call",
+                                  message:
+                                      "The identical tool call has already failed twice and was not executed again.",
+                                  details: { previousFailures },
+                              },
+                          },
+                      }
+                    : await executeToolCall(
+                          toolCall,
+                          toolRegistry,
+                          permissionPolicy,
+                      );
             if (outcome.kind === "approval_required") {
                 await writer.changeState(
                     "awaiting_approval",
@@ -453,7 +565,18 @@ async function continueModelLoop(options: {
                 toolCallId: toolCall.id,
                 content: serializeToolResult(result),
             });
+            if (!result.ok) {
+                failedCalls.set(signature, previousFailures + 1);
+            }
             validationTracker.record(toolCall, result);
+            if (!result.ok && previousFailures >= 3) {
+                return writer.finalize(
+                    "failed",
+                    "Repeated failed tool call loop detected.",
+                    resultEvent.id,
+                    `The model repeated the same failed ${toolCall.name} call without a corrective action.`,
+                );
+            }
             const retryFailure = await failIfRetryBudgetExceeded(
                 spec,
                 writer,
