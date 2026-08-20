@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "tasks": [
+    {
+      "id": "fix-greeting",
+      "specPath": "specs/example.md"
+    }
+  ]
+}
