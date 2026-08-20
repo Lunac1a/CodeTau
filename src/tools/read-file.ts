@@ -15,6 +15,18 @@ function readPath(input: unknown): string | undefined {
 
 export class ReadFileTool implements AgentTool {
     readonly name = "read_file";
+    readonly description = "Read a UTF-8 text file inside the allowed workspace.";
+    readonly inputSchema = {
+        type: "object",
+        properties: {
+            path: {
+                type: "string",
+                description: "Workspace-relative file path.",
+            },
+        },
+        required: ["path"],
+        additionalProperties: false,
+    } as const;
     readonly permission = { action: "workspace-read", risk: "read" } as const;
     private readonly sandbox: WorkspaceSandbox;
     private readonly maxBytes: number;

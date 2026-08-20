@@ -1,6 +1,6 @@
 import type { ToolCall, ToolResult } from "../types.ts";
 import { ToolRegistryError } from "./errors.ts";
-import type { AgentTool } from "./tool.ts";
+import type { AgentTool, ToolDefinition } from "./tool.ts";
 
 function executionErrorMessage(error: unknown): string {
     return error instanceof Error ? error.message : "Unknown tool execution error";
@@ -32,6 +32,26 @@ export class ToolRegistry {
             });
         }
 
+        if (tool.description.trim() === "") {
+            throw new ToolRegistryError({
+                code: "tool_description_invalid",
+                message: `Tool description must not be empty: ${tool.name}`,
+                toolName: tool.name,
+            });
+        }
+
+        if (
+            typeof tool.inputSchema !== "object" ||
+            tool.inputSchema === null ||
+            Array.isArray(tool.inputSchema)
+        ) {
+            throw new ToolRegistryError({
+                code: "tool_schema_invalid",
+                message: `Tool input schema must be an object: ${tool.name}`,
+                toolName: tool.name,
+            });
+        }
+
         if (this.tools.has(tool.name)) {
             throw new ToolRegistryError({
                 code: "tool_already_registered",
@@ -53,6 +73,20 @@ export class ToolRegistry {
 
     names(): readonly string[] {
         return [...this.tools.keys()].sort();
+    }
+
+    definitions(): readonly ToolDefinition[] {
+        return this.names().map((name) => {
+            const tool = this.tools.get(name);
+            if (tool === undefined) {
+                throw new Error(`Registered tool disappeared: ${name}`);
+            }
+            return {
+                name: tool.name,
+                description: tool.description,
+                inputSchema: structuredClone(tool.inputSchema),
+            };
+        });
     }
 
     async execute(call: ToolCall): Promise<ToolResult> {

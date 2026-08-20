@@ -1,4 +1,5 @@
 import type { ModelResponse } from "./types.ts";
+import type { ToolDefinition } from "./tools/tool.ts";
 
 export type { ModelResponse, ModelUsage } from "./types.ts";
 
@@ -10,7 +11,7 @@ export type ModelMessage = {
 
 export type ModelRequest = {
     messages: readonly ModelMessage[];
-    availableToolNames: readonly string[];
+    availableTools: readonly ToolDefinition[];
 };
 
 export interface ModelProvider {
