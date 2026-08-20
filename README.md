@@ -54,5 +54,26 @@ machine, model-independent Agent loop, immutable events, SQLite recovery,
 TaskState snapshots, JSONL audit/replay, sandboxed workspace reads, durable
 approvals, structured patches, and the bounded validation feedback loop are
 implemented and tested. A task can reach `completed` only after every Spec
-acceptance command has current passing evidence. The next phase adds the CLI
-and CodeTau-Bench Mini. No API key is needed for the completed foundation.
+acceptance command has current passing evidence. Phase 4 currently includes a
+read-only CLI status command and an OpenAI-compatible Model Provider configured
+for local LM Studio. Session Runner orchestration and CodeTau-Bench Mini remain.
+
+## Local model
+
+Start LM Studio's local API server and load `qwen2.5-7b-instruct`. The checked-in
+configuration uses:
+
+```text
+Base URL: http://localhost:1234/v1
+Model:    qwen2.5-7b-instruct
+```
+
+The provider sends registered Agent tools as OpenAI-compatible function tools
+and adds a reserved `finish_task` function for terminal outcomes. No API key is
+required for the default local server configuration.
+
+Verify the real local-model connection, including one complete tool round trip:
+
+```powershell
+pnpm model:smoke
+```
