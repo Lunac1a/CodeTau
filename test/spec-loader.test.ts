@@ -56,7 +56,7 @@ test("loads the repository example as contract plus context", async () => {
     assert.equal(spec.contract.budget.maxToolCalls, 40);
     assert.match(spec.digest, /^[a-f0-9]{64}$/);
     assert.match(spec.context, /^\r?\n?# Context/);
-    assert.match(spec.context, /existing signature/);
+    assert.match(spec.context, /existing function signature/);
 });
 
 test("preserves Markdown context separately from the contract", async () => {

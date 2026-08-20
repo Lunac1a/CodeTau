@@ -25,10 +25,12 @@ export type BenchRunDiagnostics = Readonly<{
     toolErrors: number;
     patchFailures: number;
     failedValidations: number;
+    repeatedToolCalls: number;
 }>;
 
 export type BenchRunResult = Readonly<{
     taskId: string;
+    specDigest: string;
     runNumber: number;
     sessionId: string;
     status: TerminalStatus;
@@ -44,6 +46,7 @@ export type BenchRunResult = Readonly<{
 
 export type BenchTaskSummary = Readonly<{
     taskId: string;
+    specDigest: string;
     runs: number;
     successes: number;
     successRate: number;
@@ -54,6 +57,7 @@ export type BenchTaskSummary = Readonly<{
     toolErrors: number;
     patchFailures: number;
     failedValidations: number;
+    repeatedToolCalls: number;
 }>;
 
 export type BenchReport = Readonly<{
@@ -75,5 +79,6 @@ export type BenchReport = Readonly<{
         toolErrors: number;
         patchFailures: number;
         failedValidations: number;
+        repeatedToolCalls: number;
     }>;
 }>;

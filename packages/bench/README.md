@@ -56,9 +56,13 @@ Each invocation prints the exact report path. Artifacts are stored at:
 ```
 
 The JSON report contains per-run status, duration, tool-call count, approval
-count, validation-call count, success rate, and observed pass@k. Each run also
-records a `failureCategory` and diagnostics for tool errors, failed patches, and
-failed validations. Task and overall summaries aggregate these values so a low
+count, validation-call count, success rate, and observed pass@k. Each run records
+the materialized Spec digest; reports with different digests represent different
+benchmark definitions and must not be compared as the same task. Runs also record
+a `failureCategory` and diagnostics for tool errors, failed patches, and
+failed validations. Repeated blocked tool calls are counted separately, while
+`failureCategory` reflects the terminal cause such as a budget exhaustion. Task
+and overall summaries aggregate these values so a low
 pass@1 can be separated into model-turn exhaustion, repeated tool calls,
 validation failures, provider errors, or blocked tasks. `pass@k` is the estimated
 chance that at least one result passes when selecting `k` attempts from the

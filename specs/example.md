@@ -1,12 +1,11 @@
 ---
 version: 1
 id: example.fix-greeting
-goal: Fix the greeting without changing public APIs.
+goal: Make named-user greetings end with an exclamation mark without changing the public API.
 workspace:
   root: fixtures/greeting
   allowedPaths:
     - src/**
-    - test/**
 policy:
   forbiddenActions:
     - network-access
@@ -16,8 +15,9 @@ acceptance:
     - executable: node
       args: [--experimental-strip-types, --test, test/greet.test.ts]
   assertions:
-    - All tests pass.
-    - No files outside allowedPaths change.
+    - greet("Ada") returns "Hello, Ada!".
+    - greet("") still returns "Hello!".
+    - Only src/greet.ts may change.
 phases:
   - id: diagnose
     description: Locate the failing behavior without modifying files.
@@ -28,11 +28,12 @@ budget:
   maxToolCalls: 40
   maxRetries: 3
 userInteraction:
-  allowQuestions: true
+  allowQuestions: false
   approvalResponses: [allow-once, allow-session, deny]
 ---
 
 # Context
 
-The `greet` function returns the wrong punctuation for named users. Preserve its
-existing signature and behavior for empty input.
+For every non-empty name, `greet` must return `Hello, <name>!`. Change the current
+trailing period to an exclamation mark. Preserve the existing function signature
+and the `Hello!` result for empty or whitespace-only input. Do not modify tests.

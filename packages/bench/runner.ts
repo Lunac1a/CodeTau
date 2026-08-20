@@ -114,6 +114,7 @@ function runDiagnostics(events: readonly AgentEvent[]) {
     let toolErrors = 0;
     let patchFailures = 0;
     let failedValidations = 0;
+    let repeatedToolCalls = 0;
     for (const event of events) {
         if (event.type !== "tool_result") {
             continue;
@@ -121,6 +122,9 @@ function runDiagnostics(events: readonly AgentEvent[]) {
         const toolName = toolNames.get(event.toolCallId);
         if (!event.result.ok) {
             toolErrors += 1;
+            if (event.result.error.code === "repeated_failed_tool_call") {
+                repeatedToolCalls += 1;
+            }
             if (toolName === "apply_patch") {
                 patchFailures += 1;
             }
@@ -131,7 +135,7 @@ function runDiagnostics(events: readonly AgentEvent[]) {
             failedValidations += 1;
         }
     }
-    return { toolErrors, patchFailures, failedValidations };
+    return { toolErrors, patchFailures, failedValidations, repeatedToolCalls };
 }
 
 function failureCategory(
@@ -140,16 +144,6 @@ function failureCategory(
 ): BenchFailureCategory {
     if (status === "completed") {
         return "none";
-    }
-    if (
-        events.some(
-            (event) =>
-                event.type === "tool_result" &&
-                !event.result.ok &&
-                event.result.error.code === "repeated_failed_tool_call",
-        )
-    ) {
-        return "repeated_tool_call";
     }
     const exhausted = [...events].reverse().find(
         (event): event is Extract<AgentEvent, { type: "budget_exhausted" }> =>
@@ -163,6 +157,16 @@ function failureCategory(
     }
     if (exhausted?.budget === "retries") {
         return "validation_retry_budget";
+    }
+    if (
+        events.some(
+            (event) =>
+                event.type === "tool_result" &&
+                !event.result.ok &&
+                event.result.error.code === "repeated_failed_tool_call",
+        )
+    ) {
+        return "repeated_tool_call";
     }
     if (events.some((event) => event.type === "model_error")) {
         return "model_provider_error";
@@ -186,8 +190,16 @@ function resultFrom(options: {
     durationMs: number;
     events: readonly AgentEvent[];
 }): BenchRunResult {
+    const started = options.events.find(
+        (event): event is Extract<AgentEvent, { type: "session_started" }> =>
+            event.type === "session_started",
+    );
+    if (started === undefined) {
+        throw new Error(`Bench Session is missing session_started: ${options.state.sessionId}`);
+    }
     return {
         taskId: options.taskId,
+        specDigest: started.specDigest,
         runNumber: options.runNumber,
         sessionId: options.state.sessionId,
         status: options.state.status,
@@ -352,6 +364,10 @@ export async function runBench(options: BenchRunnerOptions): Promise<BenchRunOut
             ),
             failedValidations: results.reduce(
                 (sum, result) => sum + result.diagnostics.failedValidations,
+                0,
+            ),
+            repeatedToolCalls: results.reduce(
+                (sum, result) => sum + result.diagnostics.repeatedToolCalls,
                 0,
             ),
         },

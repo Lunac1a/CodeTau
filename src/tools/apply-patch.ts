@@ -60,7 +60,7 @@ function failure(code: string, message: string, details?: unknown): ToolResult {
 export class ApplyPatchTool implements AgentTool {
     readonly name = "apply_patch";
     readonly description =
-        "Apply ordered exact-text replacements to an existing workspace file.";
+        "Apply ordered exact source-text replacements to an existing workspace file. Patch text must come from file content, never command output or logs.";
     readonly inputSchema = {
         type: "object",
         properties: {
@@ -74,8 +74,16 @@ export class ApplyPatchTool implements AgentTool {
                 items: {
                     type: "object",
                     properties: {
-                        oldText: { type: "string" },
-                        newText: { type: "string" },
+                        oldText: {
+                            type: "string",
+                            description:
+                                "Exact substring copied from the latest read_file result, including whitespace and quote or backtick delimiters.",
+                        },
+                        newText: {
+                            type: "string",
+                            description:
+                                "Syntactically valid replacement source text only. Preserve surrounding quote or backtick delimiters unless changing them is required.",
+                        },
                     },
                     required: ["oldText", "newText"],
                     additionalProperties: false,

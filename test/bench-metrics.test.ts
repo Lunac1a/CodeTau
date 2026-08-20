@@ -10,6 +10,7 @@ import type { BenchRunResult } from "../packages/bench/types.ts";
 function result(runNumber: number, passed: boolean): BenchRunResult {
     return {
         taskId: "task",
+        specDigest: "a".repeat(64),
         runNumber,
         sessionId: `session-${runNumber}`,
         status: passed ? "completed" : "failed",
@@ -23,6 +24,7 @@ function result(runNumber: number, passed: boolean): BenchRunResult {
             toolErrors: passed ? 0 : 1,
             patchFailures: 0,
             failedValidations: 0,
+            repeatedToolCalls: 0,
         },
         finalMessage: passed ? "passed" : "failed",
     };
@@ -41,6 +43,7 @@ test("summarizes repeated task runs", () => {
     ]);
 
     assert.equal(summary.successes, 1);
+    assert.equal(summary.specDigest, "a".repeat(64));
     assert.equal(summary.successRate, 0.5);
     assert.deepEqual(summary.passAtK, { "pass@1": 0.5, "pass@2": 1 });
     assert.equal(summary.averageDurationMs, 150);

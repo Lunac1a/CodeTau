@@ -100,10 +100,16 @@ test("runs repeated tasks in separate copied workspaces and writes a report", as
         );
         assert.deepEqual(output.report.overall.failureCategories, { blocked: 2 });
         assert.equal(output.report.results[0].failureCategory, "blocked");
+        assert.match(output.report.results[0].specDigest, /^[a-f0-9]{64}$/u);
+        assert.equal(
+            output.report.tasks[0].specDigest,
+            output.report.results[0].specDigest,
+        );
         assert.deepEqual(output.report.results[0].diagnostics, {
             toolErrors: 0,
             patchFailures: 0,
             failedValidations: 0,
+            repeatedToolCalls: 0,
         });
         assert.deepEqual(
             model.requests[0].messages,

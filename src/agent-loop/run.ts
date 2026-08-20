@@ -70,23 +70,38 @@ function buildInitialMessages(
             content: [
                 "You are executing a bounded coding task inside a sandboxed workspace.",
                 `Goal: ${spec.contract.goal}`,
+                "Current state: analyzing",
                 toolDescription,
-                `Scope: ${spec.contract.workspace.allowedPaths.join(", ")}. Forbidden: ${spec.contract.policy.forbiddenActions.join(", ") || "none"}.`,
-                `Phases: ${spec.contract.phases.map((phase) => `${phase.id} (${phase.description})`).join(" -> ")}.`,
-                "Validation commands:",
+                `Allowed workspace paths: ${spec.contract.workspace.allowedPaths.join(", ")}`,
+                `Forbidden actions: ${spec.contract.policy.forbiddenActions.join(", ") || "none"}`,
+                "Required phases:",
+                ...spec.contract.phases.map(
+                    (phase, index) =>
+                        `${index + 1}. ${phase.id}: ${phase.description}`,
+                ),
+                "Acceptance commands:",
                 ...(spec.contract.acceptance.commands.length === 0
                     ? ["- none"]
                     : spec.contract.acceptance.commands.map(
                           (command, index) =>
                               `- commandIndex ${index}: ${JSON.stringify([command.executable, ...command.args])}`,
                       )),
-                `Assertions: ${spec.contract.acceptance.assertions.join("; ") || "none"}`,
-                "Rules:",
-                "1. Read the relevant implementation and tests, then fix the implementation without weakening acceptance tests.",
-                "2. For apply_patch, copy oldText exactly from the latest read_file and make the smallest necessary change.",
-                "3. On failure, use the returned error or actual/expected output; do not repeat the same failed call.",
-                "4. When the fix is ready, run every validation command once using its commandIndex.",
-                "5. Request approval-requiring tools one at a time. Stop editing when validation passes; the runtime completes automatically.",
+                "Acceptance assertions:",
+                ...(spec.contract.acceptance.assertions.length === 0
+                    ? ["- none"]
+                    : spec.contract.acceptance.assertions.map(
+                          (assertion) => `- ${assertion}`,
+                      )),
+                "Execution rules:",
+                "- Inspect the relevant implementation and tests before editing.",
+                "- Fix the implementation. Do not weaken or rewrite acceptance tests unless the task explicitly requires a test change.",
+                "- For apply_patch, copy oldText exactly from the latest read_file result, including the original quote or backtick delimiters.",
+                "- newText must contain source code only. Never copy test output, stack traces, or validation logs into a patch.",
+                "- Never repeat an identical tool call after it fails. Read the returned error and choose a corrective action.",
+                "- After a failed validation, call read_file before the next patch and make one targeted source-code correction.",
+                "- When the implementation change is ready, run every acceptance command using its commandIndex.",
+                "Request at most one approval-requiring tool at a time.",
+                "Stop editing when validation passes; the Agent runtime completes automatically.",
             ].join("\n"),
         },
         {
@@ -154,6 +169,104 @@ function countToolCalls(events: readonly AgentEvent[]): number {
     return events.filter((event) => event.type === "model_tool_call").length;
 }
 
+function validationOutput(result: ToolResult): Record<string, unknown> | undefined {
+    if (!result.ok || typeof result.output !== "object" || result.output === null) {
+        return undefined;
+    }
+    return Reflect.get(result.output, "passed") === false
+        ? (result.output as Record<string, unknown>)
+        : undefined;
+}
+
+function assertionComparison(
+    output: Record<string, unknown>,
+): { actual: string; expected: string } | undefined {
+    const text = [output.stdout, output.stderr]
+        .filter((value): value is string => typeof value === "string")
+        .join("\n");
+    const actual = text
+        .match(/^\s*actual:\s*(.+)\s*$/mu)?.[1]
+        ?.replace(/,\s*$/u, "");
+    const expected = text
+        .match(/^\s*expected:\s*(.+)\s*$/mu)?.[1]
+        ?.replace(/,\s*$/u, "");
+    return actual === undefined || expected === undefined
+        ? undefined
+        : { actual, expected };
+}
+
+function unquoteDiagnosticValue(value: string): string {
+    const trimmed = value.trim();
+    const first = trimmed[0];
+    const last = trimmed.at(-1);
+    return trimmed.length >= 2 && (first === "'" || first === '"') && last === first
+        ? trimmed.slice(1, -1)
+        : trimmed;
+}
+
+function outputDifferenceHint(actualValue: string, expectedValue: string): string {
+    const actual = unquoteDiagnosticValue(actualValue);
+    const expected = unquoteDiagnosticValue(expectedValue);
+    let prefixLength = 0;
+    while (
+        prefixLength < actual.length &&
+        prefixLength < expected.length &&
+        actual[prefixLength] === expected[prefixLength]
+    ) {
+        prefixLength += 1;
+    }
+    let suffixLength = 0;
+    while (
+        suffixLength < actual.length - prefixLength &&
+        suffixLength < expected.length - prefixLength &&
+        actual[actual.length - 1 - suffixLength] ===
+            expected[expected.length - 1 - suffixLength]
+    ) {
+        suffixLength += 1;
+    }
+    const actualEnd = actual.length - suffixLength;
+    const expectedEnd = expected.length - suffixLength;
+    const actualFragment = actual.slice(prefixLength, actualEnd);
+    const expectedFragment = expected.slice(prefixLength, expectedEnd);
+    return `Minimal output difference: replace ${JSON.stringify(actualFragment)} with ${JSON.stringify(expectedFragment)}. Apply that semantic change to the implementation while preserving valid source syntax.`;
+}
+
+function compactDiagnostic(output: Record<string, unknown>): string {
+    const text = [output.stdout, output.stderr]
+        .filter((value): value is string => typeof value === "string" && value !== "")
+        .join("\n")
+        .trim();
+    if (text === "") {
+        return "Validation exited without a passing result.";
+    }
+    const lines = text.split(/\r?\n/u);
+    const relevant = lines.filter((line) =>
+        /actual|expected|error|fail|timed out/iu.test(line),
+    );
+    return (relevant.length > 0 ? relevant : lines).slice(0, 12).join("\n").slice(0, 1_500);
+}
+
+function modelFacingResult(result: ToolResult): unknown {
+    const output = validationOutput(result);
+    if (output === undefined) {
+        return result;
+    }
+    const comparison = assertionComparison(output);
+    return {
+        ok: true,
+        output: {
+            commandIndex: output.commandIndex,
+            passed: false,
+            exitCode: output.exitCode,
+            timedOut: output.timedOut,
+            outputLimitExceeded: output.outputLimitExceeded,
+            ...(comparison === undefined
+                ? { diagnostic: compactDiagnostic(output) }
+                : comparison),
+        },
+    };
+}
+
 function recoveryGuidance(result: ToolResult): string | undefined {
     if (!result.ok && result.error.code === "patch_context_missing") {
         return "The patch did not match the current file. Call read_file for that path, copy the exact current text into oldText, and then make the smallest required replacement. Do not repeat the same patch.";
@@ -161,21 +274,24 @@ function recoveryGuidance(result: ToolResult): string | undefined {
     if (!result.ok && result.error.code === "repeated_failed_tool_call") {
         return "This exact tool call has already failed. Do not submit it again. Inspect the latest file or error output and choose a different corrective action.";
     }
-    if (
-        result.ok &&
-        typeof result.output === "object" &&
-        result.output !== null &&
-        Reflect.get(result.output, "passed") === false
-    ) {
-        return "Validation failed. Read the failure output carefully, preserve the tests, compare actual with expected, and make one targeted implementation change before validating again.";
+    const output = validationOutput(result);
+    if (output !== undefined) {
+        const comparison = assertionComparison(output);
+        if (comparison !== undefined) {
+            return `Validation failed. Actual value: ${comparison.actual}. Expected value: ${comparison.expected}. ${outputDifferenceHint(comparison.actual, comparison.expected)} The expected value is authoritative. Call read_file first, preserve source delimiters, and never copy diagnostic text into a patch.`;
+        }
+        return "Validation failed. The output is diagnostic only: never copy it into oldText or newText. Call read_file, take oldText only from the current file, preserve its quote or backtick delimiters, and make one targeted implementation change before validating again.";
     }
     return undefined;
 }
 
 function serializeToolResult(result: ToolResult): string {
     const guidance = recoveryGuidance(result);
+    const modelResult = modelFacingResult(result);
     return JSON.stringify(
-        guidance === undefined ? result : { ...result, recoveryGuidance: guidance },
+        guidance === undefined
+            ? modelResult
+            : { ...(modelResult as object), recoveryGuidance: guidance },
     );
 }
 

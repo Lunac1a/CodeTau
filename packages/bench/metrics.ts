@@ -57,7 +57,14 @@ export function summarizeTask(
     taskId: string,
     results: readonly BenchRunResult[],
 ): BenchTaskSummary {
-    if (results.length === 0 || results.some((result) => result.taskId !== taskId)) {
+    const specDigest = results[0]?.specDigest;
+    if (
+        results.length === 0 ||
+        results.some(
+            (result) =>
+                result.taskId !== taskId || result.specDigest !== specDigest,
+        )
+    ) {
         throw new Error(`Cannot summarize missing or mixed results for task: ${taskId}`);
     }
     const successes = results.filter((result) => result.passed).length;
@@ -67,6 +74,7 @@ export function summarizeTask(
     }
     return {
         taskId,
+        specDigest: specDigest as string,
         runs: results.length,
         successes,
         successRate: successes / results.length,
@@ -84,6 +92,10 @@ export function summarizeTask(
         ),
         failedValidations: results.reduce(
             (sum, result) => sum + result.diagnostics.failedValidations,
+            0,
+        ),
+        repeatedToolCalls: results.reduce(
+            (sum, result) => sum + result.diagnostics.repeatedToolCalls,
             0,
         ),
     };

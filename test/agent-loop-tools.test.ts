@@ -218,6 +218,80 @@ test("guides recovery and stops an identical failed tool-call loop", async () =>
     }
 });
 
+test("sends compact actual and expected validation feedback to the model", async () => {
+    const validationTool: AgentTool = {
+        name: "run_validation",
+        description: "Return a failing assertion for compact-feedback testing.",
+        inputSchema: { type: "object" },
+        permission: { action: "workspace-read", risk: "read" },
+        async execute() {
+            return {
+                ok: true,
+                output: {
+                    commandIndex: 0,
+                    exitCode: 1,
+                    timedOut: false,
+                    outputLimitExceeded: false,
+                    passed: false,
+                    stdout: [
+                        "large test preamble",
+                        "actual: 'Hello, Ada.',",
+                        "expected: 'Hello, Ada!',",
+                        "STACK_TRACE_SHOULD_NOT_REACH_MODEL",
+                    ].join("\n"),
+                    stderr: "",
+                },
+            };
+        },
+    };
+    const store = new InMemoryEventStore();
+    const model = new FakeModelProvider([
+        {
+            kind: "tool_calls",
+            calls: [
+                {
+                    id: "compact-validation",
+                    name: "run_validation",
+                    input: { commandIndex: 0 },
+                },
+            ],
+            usage: { inputTokens: 10, outputTokens: 4 },
+        },
+        {
+            kind: "finish",
+            outcome: "blocked",
+            message: "Feedback inspected.",
+            usage: { inputTokens: 10, outputTokens: 4 },
+        },
+    ]);
+
+    try {
+        await runAgentLoop({
+            sessionId: "session-compact-validation",
+            spec: createTestSpec({ maxRetries: 2 }),
+            model,
+            eventStore: store,
+            toolRegistry: new ToolRegistry([validationTool]),
+            runtime: createRuntime("compact-validation-event"),
+        });
+
+        const feedback = model.requests[1].messages.at(-1)?.content ?? "";
+        const parsedFeedback = JSON.parse(feedback) as {
+            recoveryGuidance?: string;
+        };
+        assert.match(feedback, /Actual value: 'Hello, Ada\.'/);
+        assert.match(feedback, /Expected value: 'Hello, Ada!'/);
+        assert.match(parsedFeedback.recoveryGuidance ?? "", /replace "\." with "!"/);
+        assert.doesNotMatch(feedback, /STACK_TRACE_SHOULD_NOT_REACH_MODEL/);
+        const storedResult = (await store.loadSession("session-compact-validation")).find(
+            (event) => event.type === "tool_result",
+        );
+        assert.match(JSON.stringify(storedResult), /STACK_TRACE_SHOULD_NOT_REACH_MODEL/);
+    } finally {
+        await store.close();
+    }
+});
+
 test("pauses a write tool and resumes it after allow-once approval", async () => {
     let executed = false;
     const writeTool: AgentTool = {

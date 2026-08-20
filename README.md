@@ -63,7 +63,10 @@ identical, grounds the model with the complete acceptance contract, adds
 tool-error recovery guidance, stops identical failed-call loops, and reports
 structured failure categories. The Agent Loop now owns completion: once every
 acceptance command has current passing evidence, it immediately freezes the
-validated result and completes without requiring another model turn.
+validated result and completes without requiring another model turn. Failed
+validations are stored with their full logs for audit, while the model receives
+compact actual/expected diagnostics so small local models are not distracted by
+stack traces.
 
 ## Local model
 
