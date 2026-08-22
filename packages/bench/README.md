@@ -75,3 +75,20 @@ recorded runs.
 Repeated runs use different Session IDs and isolated workspaces, but the initial
 messages sent to the model are identical. This keeps the reliability comparison
 focused on inference and Agent behavior rather than run-number prompt changes.
+
+## Official tau adapter
+
+The external tau integration is separate from CodeTau-Bench Mini. Phase 5.3
+adds three TypeScript boundaries under `packages/bench/tau/`:
+
+- `protocol.ts` validates Python-to-TypeScript JSONL messages.
+- `client.ts` owns the Python child process, line framing, correlation,
+  timeouts, diagnostics, and exit handling.
+- `adapter.ts` maps tau policies, messages, and dynamic tool definitions onto
+  CodeTau's existing model-provider request/response types.
+
+Tau sessions deliberately disable the coding-only `finish_task` function. The
+official tau environment owns task termination and reward; CodeTau returns only
+assistant text or tau tool calls. The checked-in `--fake` Python driver provides
+deterministic cross-process acceptance coverage without installing tau3-bench.
+The real pinned driver and one-task smoke remain Phase 5.4 work.
