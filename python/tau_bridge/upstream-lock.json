@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "benchmark": {
+    "displayName": "tau3-bench",
+    "distribution": "tau2",
+    "repository": "https://github.com/sierra-research/tau2-bench",
+    "release": "v1.0.1",
+    "tagObject": "b711c1ead46f55111bf765cf44d5da8bacc2d28c",
+    "commit": "fc0055dc4e0a316c3f83133267fbd6faaa770992",
+    "license": "MIT"
+  },
+  "runtime": {
+    "python": ">=3.12,<3.14",
+    "environment": "isolated",
+    "packageManager": "uv",
+    "installMode": "source-checkout",
+    "syncMode": "frozen"
+  },
+  "evaluation": {
+    "modality": "text",
+    "communication": "half-duplex",
+    "taskSplit": "base",
+    "smokeDomain": "mock"
+  },
+  "transport": {
+    "kind": "jsonl-stdio",
+    "protocolVersion": 1,
+    "encoding": "utf-8"
+  }
+}

@@ -143,6 +143,29 @@ test("serializes assistant tool calls before their tool results", async () => {
     });
 });
 
+test("omits the coding finish tool for an external evaluation turn", async () => {
+    let capturedBody = "";
+    const fetch: FetchLike = async (_input, init) => {
+        capturedBody = String(init?.body);
+        return jsonResponse(completion({ role: "assistant", content: "Done." }));
+    };
+    const provider = new OpenAICompatibleModelProvider({
+        baseUrl: "http://localhost:1234/v1",
+        model: "qwen2.5-7b-instruct",
+        fetch,
+    });
+
+    await provider.generate({ ...baseRequest, includeFinishTool: false });
+    const body = JSON.parse(capturedBody) as {
+        tools: Array<{ function: { name: string } }>;
+    };
+
+    assert.deepEqual(
+        body.tools.map((tool) => tool.function.name),
+        ["read_file"],
+    );
+});
+
 test("maps standard function calls to Agent tool calls", async () => {
     const fetch: FetchLike = async () =>
         jsonResponse(
