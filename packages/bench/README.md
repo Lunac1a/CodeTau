@@ -116,7 +116,27 @@ supported; `--model` and `--base-url` override the first two. Reports are stored
 under `.codetau/tau/<benchmark-id>/report.json`. Each task summary includes
 success rate and observed `pass@k`.
 
-The current runner is deliberately limited to pinned `mock/base` and uses a
-scripted user. Results validate CodeTau's provider integration and official
-environment reward path, but are not official leaderboard submissions and must
-not be compared with full user-simulator benchmark runs.
+The deterministic acceptance mode is deliberately limited to pinned `mock/base`
+and uses a scripted user. Those results validate CodeTau's provider integration
+and official environment reward path, but are not official leaderboard
+submissions and must not be compared with full user-simulator benchmark runs.
+
+### Airline official-user slice
+
+The first full-conversation slice permits one pinned `airline/base` task at a
+time and requires the official user simulator plus `ALL` evaluation:
+
+```powershell
+pnpm tau:run -- --domain airline --model-mode lmstudio `
+  --model qwen2.5-7b-instruct --user-mode official `
+  --user-model openai/qwen2.5-7b-instruct `
+  --user-base-url http://localhost:1234/v1 `
+  --evaluation all --task 0 --runs 1 --seed 42
+```
+
+The Agent model is called through CodeTau's OpenAI-compatible provider. The
+official Python `UserSimulator` is called through upstream LiteLLM. Both may use
+the same LM Studio endpoint for local integration testing. Reports explicitly
+record both model roles and endpoints. This proves the complete conversation and
+official scoring path, but using the same local model for both roles is not an
+official leaderboard configuration.

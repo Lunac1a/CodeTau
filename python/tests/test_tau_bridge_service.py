@@ -237,6 +237,34 @@ class BridgeServiceTest(unittest.TestCase):
         self.assertEqual(output[1]["payload"]["code"], "unsupported_scope")
         self.assertIsNone(driver.config)
 
+    def test_allows_an_explicitly_configured_domain(self) -> None:
+        driver = FakeTauDriver()
+        output = io.StringIO()
+        diagnostics = io.StringIO()
+        airline_run = message(
+            "airline-run",
+            "run_start",
+            {
+                "domain": "airline",
+                "taskSplit": "base",
+                "taskId": "0",
+                "trial": 1,
+                "seed": 42,
+            },
+        )
+        code = serve(
+            driver,
+            io.StringIO("\n".join([handshake(), airline_run]) + "\n"),
+            output,
+            diagnostics,
+            allowed_domains={"airline"},
+        )
+        messages = [json.loads(line) for line in output.getvalue().splitlines()]
+
+        self.assertEqual(code, 2)
+        self.assertEqual(messages[1]["type"], "agent_init")
+        self.assertEqual(driver.config, RunConfig("airline", "base", "0", 1, 42))
+
     def test_rejects_an_incompatible_handshake_version(self) -> None:
         incompatible = message(
             "hello",

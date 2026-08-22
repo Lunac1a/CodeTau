@@ -11,7 +11,7 @@ from tau2.agent.base_agent import HalfDuplexAgent
 from tau2.data_model.message import AssistantMessage, MultiToolMessage, ToolCall, ToolMessage, UserMessage
 from tau2.evaluator.evaluator import EvaluationType
 from tau2.orchestrator.orchestrator import Orchestrator
-from tau2.runner import build_environment, get_tasks, run_simulation
+from tau2.runner import build_environment, build_user, get_tasks, run_simulation
 
 from .bridge import AgentInit, AgentTurn, DriverEvent, RunConfig, RunOutcome
 
@@ -123,8 +123,26 @@ def _tool_definitions(tools: list[Any]) -> list[dict[str, Any]]:
 class OfficialTauDriver:
     """Runs one pinned official task while the host supplies agent turns."""
 
-    def __init__(self, *, event_timeout_seconds: float = 60.0):
+    def __init__(
+        self,
+        *,
+        event_timeout_seconds: float = 300.0,
+        user_mode: str = "scripted",
+        user_model: str | None = None,
+        user_base_url: str | None = None,
+        user_api_key: str | None = None,
+        evaluation: str = "env",
+    ):
         self._event_timeout_seconds = event_timeout_seconds
+        if user_mode not in {"scripted", "official"}:
+            raise ValueError("user_mode must be scripted or official")
+        if user_mode == "official" and (not user_model or not user_base_url):
+            raise ValueError("official user mode requires a model and base URL")
+        self._user_mode = user_mode
+        self._user_model = user_model
+        self._user_base_url = user_base_url
+        self._user_api_key = user_api_key or "lm-studio"
+        self._evaluation_type = EvaluationType(evaluation)
         self._agent: _BridgeAgent | None = None
         self._orchestrator: Orchestrator | None = None
         self._thread: Thread | None = None
@@ -143,18 +161,32 @@ class OfficialTauDriver:
         task = tasks[0]
         environment = build_environment(config.domain)
         agent = _BridgeAgent(environment.get_tools(), environment.get_policy())
-        instruction = getattr(task.user_scenario, "instructions", None)
-        if not isinstance(instruction, str) or not instruction:
-            raise RuntimeError(f"task {task.id} has no scripted user instruction")
+        if self._user_mode == "official":
+            user = build_user(
+                "user_simulator",
+                environment,
+                task,
+                llm=self._user_model,
+                llm_args={
+                    "api_base": self._user_base_url,
+                    "api_key": self._user_api_key,
+                    "temperature": 0,
+                },
+            )
+        else:
+            instruction = getattr(task.user_scenario, "instructions", None)
+            if not isinstance(instruction, str) or not instruction:
+                raise RuntimeError(f"task {task.id} has no scripted user instruction")
+            user = _ScriptedSmokeUser(instruction)
         self._agent = agent
         self._orchestrator = Orchestrator(
             domain=config.domain,
             agent=agent,
-            user=_ScriptedSmokeUser(instruction),
+            user=user,
             environment=environment,
             task=task,
-            max_steps=10,
-            max_errors=3,
+            max_steps=200 if self._user_mode == "official" else 10,
+            max_errors=10 if self._user_mode == "official" else 3,
             seed=config.seed,
             validate_communication=True,
         )
@@ -181,7 +213,10 @@ class OfficialTauDriver:
         assert self._agent is not None
         assert self._orchestrator is not None
         try:
-            simulation = run_simulation(self._orchestrator, evaluation_type=EvaluationType.ENV)
+            simulation = run_simulation(
+                self._orchestrator,
+                evaluation_type=self._evaluation_type,
+            )
             reward = simulation.reward_info.reward
             if reward is None:
                 raise RuntimeError("tau evaluator returned no reward")
@@ -194,7 +229,7 @@ class OfficialTauDriver:
         event = self._agent.events.get(timeout=self._event_timeout_seconds)
         if isinstance(event, BaseException):
             self._clear_finished_run()
-            raise RuntimeError("official tau simulation failed") from event
+            raise RuntimeError(f"official tau simulation failed: {event}") from event
         if isinstance(event, RunOutcome):
             self._clear_finished_run()
         return event

@@ -35,8 +35,10 @@ export type TauReproducibilityMetadata = Readonly<{
     evaluation: Readonly<{
         modality: "text";
         communication: "half-duplex";
-        evaluator: "env";
+        evaluator: "env" | "all";
         user: string;
+        userModel: string | null;
+        userBaseUrl: string | null;
         modelMode: string;
         modelBaseUrl: string | null;
     }>;
@@ -61,7 +63,7 @@ export type TauReportRun = Readonly<{
 }>;
 
 export type TauReport = Readonly<{
-    version: 2;
+    version: 3;
     benchmarkId: string;
     model: string;
     startedAt: string;
@@ -252,7 +254,7 @@ export function buildTauReport(options: Readonly<{
         };
     });
     return {
-        version: 2,
+        version: 3,
         benchmarkId: options.benchmarkId,
         model: options.model,
         startedAt: options.startedAt.toISOString(),

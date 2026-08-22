@@ -42,6 +42,8 @@ const reproducibility: TauReproducibilityMetadata = {
         communication: "half-duplex",
         evaluator: "env",
         user: "scripted-smoke",
+        userModel: null,
+        userBaseUrl: null,
         modelMode: "deterministic-model",
         modelBaseUrl: null,
     },
@@ -77,7 +79,7 @@ test("builds a tau report with unified success, timing, tool, and failure metric
     });
 
     assert.equal(report.overall.runs, 2);
-    assert.equal(report.version, 2);
+    assert.equal(report.version, 3);
     assert.equal(report.overall.successes, 1);
     assert.equal(report.overall.successRate, 0.5);
     assert.equal(report.overall.averageReward, 0.5);

@@ -20,8 +20,13 @@ test("parses repeated tau tasks, trials, seed, and LM Studio settings", () => {
         runsPerTask: 3,
         baseSeed: 100,
         modelMode: "lmstudio",
+        domain: "mock",
+        userMode: "scripted",
+        evaluation: "env",
         model: "local-model",
         baseUrl: "http://localhost:1234/v1",
+        userModel: "openai/local-model",
+        userBaseUrl: "http://localhost:1234/v1",
         outputDirectory: "reports",
     });
 });
@@ -37,4 +42,17 @@ test("uses a bounded deterministic default and rejects unsafe options", () => {
         () => parseTauCliArgs(["--model-mode", "remote"]),
         /deterministic or lmstudio/u,
     );
+    assert.throws(
+        () => parseTauCliArgs(["--domain", "airline"]),
+        /official.*evaluation all/u,
+    );
+    const airline = parseTauCliArgs([
+        "--domain", "airline",
+        "--model-mode", "lmstudio",
+        "--user-mode", "official",
+        "--evaluation", "all",
+        "--task", "0",
+    ]);
+    assert.equal(airline.userModel, "openai/qwen2.5-7b-instruct");
+    assert.equal(airline.userBaseUrl, "http://localhost:1234/v1");
 });

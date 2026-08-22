@@ -109,6 +109,20 @@ environment variables are `CODETAU_MODEL`, `CODETAU_MODEL_BASE_URL`, and
 `CODETAU_MODEL_API_KEY`. The command exits non-zero if any recorded run fails,
 but writes the failure report first.
 
+The bounded official-user airline slice is:
+
+```powershell
+pnpm tau:run -- --domain airline --model-mode lmstudio `
+  --model qwen2.5-7b-instruct --user-mode official `
+  --user-model openai/qwen2.5-7b-instruct `
+  --user-base-url http://localhost:1234/v1 `
+  --evaluation all --task 0 --runs 1 --seed 42
+```
+
+`--user-model` uses LiteLLM model naming; an OpenAI-compatible local model uses
+the `openai/` prefix. `--user-base-url` is passed as LiteLLM's `api_base`.
+`CODETAU_TAU_USER_API_KEY` is optional for endpoints that require a key.
+
 ## Reproducibility rules
 
 Comparable reports must record the upstream commit, Python version, uv lock

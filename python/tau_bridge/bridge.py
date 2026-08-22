@@ -93,11 +93,13 @@ class BridgeService:
         output: TextIO,
         diagnostics: TextIO,
         contract: IntegrationContract | None = None,
+        allowed_domains: set[str] | None = None,
     ):
         self._driver = driver
         self._output = output
         self._diagnostics = diagnostics
         self._contract = contract or load_integration_contract()
+        self._allowed_domains = allowed_domains or {self._contract.smoke_domain}
         self._state = BridgeState.NEW
         self._pending_id: str | None = None
         self._run_id: str | None = None
@@ -201,10 +203,11 @@ class BridgeService:
 
     def _handle_run_start(self, message: Envelope) -> None:
         self._expect(BridgeState.READY, message)
-        if message.payload["domain"] != self._contract.smoke_domain:
+        if message.payload["domain"] not in self._allowed_domains:
             raise BridgeViolation(
                 "unsupported_scope",
-                f"Phase 5.2 only permits domain {self._contract.smoke_domain}",
+                "bridge does not permit domain "
+                f"{message.payload['domain']}; allowed: {', '.join(sorted(self._allowed_domains))}",
             )
         if message.payload["taskSplit"] != self._contract.task_split:
             raise BridgeViolation(
@@ -324,8 +327,15 @@ def serve(
     output_stream: TextIO = sys.stdout,
     diagnostics: TextIO = sys.stderr,
     contract: IntegrationContract | None = None,
+    allowed_domains: set[str] | None = None,
 ) -> int:
-    service = BridgeService(driver, output_stream, diagnostics, contract)
+    service = BridgeService(
+        driver,
+        output_stream,
+        diagnostics,
+        contract,
+        allowed_domains,
+    )
     for line in input_stream:
         try:
             message = decode_line(line, "host-to-bridge")

@@ -80,8 +80,10 @@ const reproducibility: TauReproducibilityMetadata = {
     evaluation: {
         modality: "text",
         communication: "half-duplex",
-        evaluator: "env",
-        user: "scripted-smoke",
+        evaluator: options.evaluation,
+        user: options.userMode === "official" ? "official-user-simulator" : "scripted-smoke",
+        userModel: options.userMode === "official" ? options.userModel : null,
+        userBaseUrl: options.userMode === "official" ? options.userBaseUrl : null,
         modelMode: options.modelMode,
         modelBaseUrl: options.modelMode === "lmstudio" ? options.baseUrl : null,
     },
@@ -89,7 +91,7 @@ const reproducibility: TauReproducibilityMetadata = {
 
 const output = await runTauEvaluation({
     tasks: options.taskIds.map((taskId) => ({
-        domain: "mock",
+        domain: options.domain,
         taskSplit: "base",
         taskId,
     })),
@@ -111,9 +113,26 @@ const output = await runTauEvaluation({
               });
         const transport = new ProcessTauBridgeTransport({
             command: python,
-            args: ["-m", "tau_bridge"],
+            args: [
+                "-m",
+                "tau_bridge",
+                "--allow-domain",
+                options.domain,
+                "--user-mode",
+                options.userMode,
+                "--evaluation",
+                options.evaluation,
+                ...(options.userMode === "official"
+                    ? [
+                          "--user-model",
+                          options.userModel,
+                          "--user-base-url",
+                          options.userBaseUrl,
+                      ]
+                    : []),
+            ],
             cwd: resolve(projectRoot, "python"),
-            timeoutMs: 180_000,
+            timeoutMs: 300_000,
         });
         return await new TauSessionAdapter({
             client: new TauBridgeClient(transport),

@@ -136,6 +136,8 @@ const report = buildTauReport({
             communication: "half-duplex",
             evaluator: "env",
             user: "scripted-smoke",
+            userModel: null,
+            userBaseUrl: null,
             modelMode: "deterministic-model",
             modelBaseUrl: null,
         },

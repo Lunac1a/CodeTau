@@ -1,12 +1,20 @@
 export type TauModelMode = "deterministic" | "lmstudio";
+export type TauDomain = "mock" | "airline";
+export type TauUserMode = "scripted" | "official";
+export type TauEvaluationMode = "env" | "all";
 
 export type TauCliOptions = Readonly<{
     taskIds: readonly string[];
     runsPerTask: number;
     baseSeed: number;
     modelMode: TauModelMode;
+    domain: TauDomain;
+    userMode: TauUserMode;
+    evaluation: TauEvaluationMode;
     model: string;
     baseUrl: string;
+    userModel: string;
+    userBaseUrl: string;
     outputDirectory?: string;
 }>;
 
@@ -32,8 +40,13 @@ export function parseTauCliArgs(rawArgs: readonly string[]): TauCliOptions {
     let runsPerTask = 1;
     let baseSeed = 42;
     let modelMode: TauModelMode = "deterministic";
+    let domain: TauDomain = "mock";
+    let userMode: TauUserMode = "scripted";
+    let evaluation: TauEvaluationMode = "env";
     let model = process.env.CODETAU_MODEL ?? "qwen2.5-7b-instruct";
     let baseUrl = process.env.CODETAU_MODEL_BASE_URL ?? "http://localhost:1234/v1";
+    let userModel = process.env.CODETAU_TAU_USER_MODEL ?? "";
+    let userBaseUrl = process.env.CODETAU_TAU_USER_BASE_URL ?? "";
     let outputDirectory: string | undefined;
 
     for (let index = 0; index < args.length; index += 1) {
@@ -57,11 +70,38 @@ export function parseTauCliArgs(rawArgs: readonly string[]): TauCliOptions {
             }
             modelMode = mode;
             index += 1;
+        } else if (option === "--domain") {
+            const selectedDomain = value(args, index, option);
+            if (selectedDomain !== "mock" && selectedDomain !== "airline") {
+                throw new Error("--domain must be mock or airline");
+            }
+            domain = selectedDomain;
+            index += 1;
+        } else if (option === "--user-mode") {
+            const selectedMode = value(args, index, option);
+            if (selectedMode !== "scripted" && selectedMode !== "official") {
+                throw new Error("--user-mode must be scripted or official");
+            }
+            userMode = selectedMode;
+            index += 1;
+        } else if (option === "--evaluation") {
+            const selectedEvaluation = value(args, index, option);
+            if (selectedEvaluation !== "env" && selectedEvaluation !== "all") {
+                throw new Error("--evaluation must be env or all");
+            }
+            evaluation = selectedEvaluation;
+            index += 1;
         } else if (option === "--model") {
             model = value(args, index, option);
             index += 1;
         } else if (option === "--base-url") {
             baseUrl = value(args, index, option);
+            index += 1;
+        } else if (option === "--user-model") {
+            userModel = value(args, index, option);
+            index += 1;
+        } else if (option === "--user-base-url") {
+            userBaseUrl = value(args, index, option);
             index += 1;
         } else if (option === "--output") {
             outputDirectory = value(args, index, option);
@@ -78,13 +118,30 @@ export function parseTauCliArgs(rawArgs: readonly string[]): TauCliOptions {
     if (new Set(selectedTasks).size !== selectedTasks.length) {
         throw new Error("Tau task ids must be unique");
     }
+    if (userModel === "") {
+        userModel = `openai/${model}`;
+    }
+    if (userBaseUrl === "") {
+        userBaseUrl = baseUrl;
+    }
+    if (domain === "airline" && (userMode !== "official" || evaluation !== "all")) {
+        throw new Error("Airline runs require --user-mode official and --evaluation all");
+    }
+    if (modelMode === "deterministic" && (domain !== "mock" || userMode !== "scripted")) {
+        throw new Error("Deterministic mode supports only mock with scripted user mode");
+    }
     return {
         taskIds: selectedTasks,
         runsPerTask,
         baseSeed,
         modelMode,
+        domain,
+        userMode,
+        evaluation,
         model,
         baseUrl,
+        userModel,
+        userBaseUrl,
         ...(outputDirectory === undefined ? {} : { outputDirectory }),
     };
 }

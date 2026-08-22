@@ -26,6 +26,8 @@ const reproducibility: TauReproducibilityMetadata = {
         communication: "half-duplex",
         evaluator: "env",
         user: "scripted-smoke",
+        userModel: null,
+        userBaseUrl: null,
         modelMode: "fake",
         modelBaseUrl: null,
     },
