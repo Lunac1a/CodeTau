@@ -68,6 +68,13 @@ validations are stored with their full logs for audit, while the model receives
 compact actual/expected diagnostics so small local models are not distracted by
 stack traces.
 
+Phase 5.1 through 5.3 now pin tau3-bench 1.0.1, define a strict Python JSONL
+bridge, and connect it to a TypeScript `TauSessionAdapter`. The adapter reuses
+the model-independent provider and message contracts while leaving the
+coding-specific workspace, approval, validation, and completion loop unchanged.
+Current acceptance uses a deterministic fake Python driver; no claim of a real
+tau benchmark run is made until the Phase 5.4 smoke succeeds.
+
 ## Local model
 
 Start LM Studio's local API server and load `qwen2.5-7b-instruct`. The checked-in
