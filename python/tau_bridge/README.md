@@ -74,6 +74,19 @@ environment tools, and environment evaluator. The TypeScript side deliberately
 uses a deterministic model, so the command verifies the integration boundary
 and official reward path; it is not a model-quality benchmark score.
 
+Every invocation writes a versioned report to:
+
+```text
+.codetau/tau/<benchmark-id>/report.json
+```
+
+The report contains per-run reward, status, duration, model turns, token usage,
+tool-call counts by name, and a stable failure category. Its aggregate section
+contains success rate, average reward, average duration, tool totals, and failure
+counts. Reproducibility metadata records the CodeTau version and Git state,
+official release and commit, `uv.lock` SHA-256, Python and uv versions, protocol
+version, evaluator, user mode, and model mode.
+
 ## Reproducibility rules
 
 Comparable reports must record the upstream commit, Python version, uv lock

@@ -26,12 +26,16 @@ export type TauSessionResult = Readonly<{
     status: "completed" | "failed";
     metadata: TauRunMetadata;
     modelTurns: number;
+    toolCalls: number;
+    toolCallsByName: Readonly<Record<string, number>>;
+    durationMs: number;
     usage: ModelUsage;
 }>;
 
 export type TauSessionAdapterOptions = Readonly<{
     client: TauBridgeClient;
     model: ModelProvider;
+    now?: () => number;
 }>;
 
 function toolDefinition(tool: TauToolDefinition): ToolDefinition {
@@ -143,10 +147,12 @@ function assistantFromResponse(
 export class TauSessionAdapter {
     readonly #client: TauBridgeClient;
     readonly #model: ModelProvider;
+    readonly #now: () => number;
 
     constructor(options: TauSessionAdapterOptions) {
         this.#client = options.client;
         this.#model = options.model;
+        this.#now = options.now ?? Date.now;
     }
 
     async run(options: TauRunStart): Promise<TauSessionResult> {
@@ -154,6 +160,9 @@ export class TauSessionAdapter {
         let modelTurns = 0;
         let inputTokens = 0;
         let outputTokens = 0;
+        let toolCalls = 0;
+        const toolCallsByName: Record<string, number> = {};
+        const startedAt = this.#now();
         try {
             await this.#client.handshake();
             const initialization = await this.#client.startRun(options);
@@ -176,15 +185,28 @@ export class TauSessionAdapter {
             );
             while (event.type === "agent_turn") {
                 appendInput(messages, event.payload.message);
-                const response = await this.#model.generate({
-                    messages: structuredClone(messages),
-                    availableTools,
-                    includeFinishTool: false,
-                });
+                let response: Awaited<ReturnType<ModelProvider["generate"]>>;
+                try {
+                    response = await this.#model.generate({
+                        messages: structuredClone(messages),
+                        availableTools,
+                        includeFinishTool: false,
+                    });
+                } catch (error) {
+                    throw new TauAdapterError(
+                        "model_provider_error",
+                        "Model provider failed during a tau turn",
+                        { cause: error },
+                    );
+                }
                 modelTurns += 1;
                 inputTokens += response.usage.inputTokens;
                 outputTokens += response.usage.outputTokens;
                 const assistant = assistantFromResponse(response);
+                for (const call of assistant.protocol.toolCalls) {
+                    toolCalls += 1;
+                    toolCallsByName[call.name] = (toolCallsByName[call.name] ?? 0) + 1;
+                }
                 messages.push(assistant.model);
                 event = await this.#client.respondToTurn(
                     event.id,
@@ -198,6 +220,9 @@ export class TauSessionAdapter {
                 status: event.payload.status,
                 metadata: event.payload.metadata,
                 modelTurns,
+                toolCalls,
+                toolCallsByName,
+                durationMs: this.#now() - startedAt,
                 usage: { inputTokens, outputTokens },
             };
         } finally {

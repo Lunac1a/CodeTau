@@ -1,12 +1,38 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
 import { access, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { promisify } from "node:util";
 
 import { TauSessionAdapter } from "../packages/bench/tau/adapter.ts";
 import { ProcessTauBridgeTransport, TauBridgeClient } from "../packages/bench/tau/client.ts";
+import {
+    buildTauReport,
+    completedTauRun,
+    failedTauRun,
+    nextTauBenchmarkId,
+    writeTauReport,
+    type TauReportRun,
+} from "../packages/bench/tau/report.ts";
 import type { ModelProvider, ModelResponse } from "../src/model.ts";
 
-type UpstreamLock = Readonly<{ benchmark: Readonly<{ commit: string }> }>;
+type UpstreamLock = Readonly<{
+    benchmark: Readonly<{
+        displayName: string;
+        distribution: string;
+        repository: string;
+        release: string;
+        tagObject: string;
+        commit: string;
+        license: string;
+    }>;
+    transport: Readonly<{ protocolVersion: number }>;
+}>;
+
+type PackageMetadata = Readonly<{ version: string }>;
+
+const runCommand = promisify(execFile);
 
 class DeterministicSmokeModel implements ModelProvider {
     #turn = 0;
@@ -41,7 +67,19 @@ const lock = JSON.parse(
 ) as UpstreamLock;
 const checkout = resolve(`.codetau/upstream/tau2-bench-${lock.benchmark.commit.slice(0, 8)}`);
 const python = resolve(checkout, ".venv/Scripts/python.exe");
+const uv = resolve(".codetau/upstream/uv-tool/Scripts/uv.exe");
 await access(python);
+await access(uv);
+
+const startedAt = new Date();
+const benchmarkId = nextTauBenchmarkId(startedAt);
+const run = {
+    domain: "mock",
+    taskSplit: "base",
+    taskId: "create_task_1",
+    trial: 1,
+    seed: 42,
+} as const;
 
 const transport = new ProcessTauBridgeTransport({
     command: python,
@@ -53,26 +91,69 @@ const adapter = new TauSessionAdapter({
     client: new TauBridgeClient(transport),
     model: new DeterministicSmokeModel(),
 });
-const result = await adapter.run({
-    domain: "mock",
-    taskSplit: "base",
-    taskId: "create_task_1",
-    trial: 1,
-    seed: 42,
-});
+const runStartedAt = Date.now();
+let reportRun: TauReportRun;
+try {
+    const result = await adapter.run(run);
+    assert.equal(result.metadata.upstreamCommit, lock.benchmark.commit);
+    reportRun = completedTauRun(run, result);
+} catch (error) {
+    reportRun = failedTauRun(run, Date.now() - runStartedAt, error);
+}
 
-assert.equal(result.status, "completed");
-assert.equal(result.reward, 1);
-assert.equal(result.metadata.upstreamCommit, lock.benchmark.commit);
+const [packageSource, uvLock, pythonResult, uvResult, gitCommitResult, gitStatusResult] =
+    await Promise.all([
+        readFile(resolve("package.json"), "utf8"),
+        readFile(resolve(checkout, "uv.lock")),
+        runCommand(python, ["--version"]),
+        runCommand(uv, ["--version"]),
+        runCommand("git", ["rev-parse", "HEAD"], { cwd: projectRoot }),
+        runCommand("git", ["status", "--porcelain"], { cwd: projectRoot }),
+    ]);
+const packageMetadata = JSON.parse(packageSource) as PackageMetadata;
+const report = buildTauReport({
+    benchmarkId,
+    model: "deterministic-smoke",
+    startedAt,
+    finishedAt: new Date(),
+    reproducibility: {
+        codeTau: {
+            version: packageMetadata.version,
+            gitCommit: gitCommitResult.stdout.trim(),
+            dirty: gitStatusResult.stdout.trim().length > 0,
+        },
+        upstream: {
+            ...lock.benchmark,
+            uvLockSha256: createHash("sha256").update(uvLock).digest("hex"),
+        },
+        runtime: {
+            python: `${pythonResult.stdout}${pythonResult.stderr}`.trim(),
+            uv: `${uvResult.stdout}${uvResult.stderr}`.trim(),
+        },
+        protocolVersion: lock.transport.protocolVersion,
+        evaluation: {
+            modality: "text",
+            communication: "half-duplex",
+            evaluator: "env",
+            user: "scripted-smoke",
+            modelMode: "deterministic-model",
+        },
+    },
+    results: [reportRun],
+});
+const output = await writeTauReport({ report });
 
 console.log(JSON.stringify({
-    smokeMode: "deterministic-model",
-    domain: result.metadata.domain,
-    taskSplit: result.metadata.taskSplit,
-    taskId: result.metadata.taskId,
-    seed: result.metadata.seed,
-    upstreamCommit: result.metadata.upstreamCommit,
-    reward: result.reward,
-    status: result.status,
-    modelTurns: result.modelTurns,
+    benchmarkId: report.benchmarkId,
+    reportPath: output.reportPath,
+    runs: report.overall.runs,
+    successes: report.overall.successes,
+    successRate: report.overall.successRate,
+    averageDurationMs: report.overall.averageDurationMs,
+    totalToolCalls: report.overall.totalToolCalls,
+    failureCategories: report.overall.failureCategories,
 }, null, 2));
+
+if (!reportRun.passed) {
+    process.exitCode = 1;
+}

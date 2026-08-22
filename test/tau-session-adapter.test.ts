@@ -42,7 +42,12 @@ test("runs CodeTau model turns through the fake Python tau bridge", async () => 
             usage: { inputTokens: 30, outputTokens: 6 },
         },
     ]);
-    const adapter = new TauSessionAdapter({ client, model });
+    const times = [1_000, 1_250];
+    const adapter = new TauSessionAdapter({
+        client,
+        model,
+        now: () => times.shift() as number,
+    });
 
     const result = await adapter.run({
         domain: "mock",
@@ -55,6 +60,9 @@ test("runs CodeTau model turns through the fake Python tau bridge", async () => 
     assert.equal(result.reward, 1);
     assert.equal(result.status, "completed");
     assert.equal(result.modelTurns, 2);
+    assert.equal(result.toolCalls, 1);
+    assert.deepEqual(result.toolCallsByName, { lookup_order: 1 });
+    assert.equal(result.durationMs, 250);
     assert.deepEqual(result.usage, { inputTokens: 50, outputTokens: 11 });
     assert.equal(model.requests.length, 2);
     assert.equal(model.requests[0]?.includeFinishTool, false);
@@ -69,5 +77,6 @@ test("runs CodeTau model turns through the fake Python tau bridge", async () => 
         content: '{"orderId":"100","status":"found"}',
     });
     assert.equal(ids.length, 0);
+    assert.equal(times.length, 0);
     assert.equal(client.diagnostics(), "");
 });
