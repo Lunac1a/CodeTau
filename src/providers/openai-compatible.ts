@@ -120,7 +120,7 @@ function toOpenAIMessage(message: ModelMessage): OpenAIMessage {
     if (message.role === "assistant" && "toolCalls" in message) {
         return {
             role: "assistant",
-            content: null,
+            content: message.content,
             tool_calls: message.toolCalls.map(toOpenAIToolCall),
         };
     }
@@ -245,7 +245,7 @@ function parseFinish(call: ToolCall, usage: ModelUsage): ModelResponse {
     };
 }
 
-function parseResponse(value: unknown): ModelResponse {
+function parseResponse(value: unknown, includeFinishTool: boolean): ModelResponse {
     if (typeof value !== "object" || value === null) {
         throw new ModelProviderError({
             code: "invalid_response",
@@ -280,7 +280,7 @@ function parseResponse(value: unknown): ModelResponse {
     if (Array.isArray(modelMessage.tool_calls) && modelMessage.tool_calls.length > 0) {
         const calls = modelMessage.tool_calls.map(parseToolCall);
         const finishCalls = calls.filter((call) => call.name === FINISH_TOOL_NAME);
-        if (finishCalls.length > 0) {
+        if (includeFinishTool && finishCalls.length > 0) {
             if (calls.length !== 1) {
                 throw new ModelProviderError({
                     code: "invalid_tool_call",
@@ -323,7 +323,11 @@ export class OpenAICompatibleModelProvider implements ModelProvider {
     }
 
     async generate(request: ModelRequest): Promise<ModelResponse> {
-        if (request.availableTools.some((tool) => tool.name === FINISH_TOOL_NAME)) {
+        const includeFinishTool = request.includeFinishTool !== false;
+        if (
+            includeFinishTool &&
+            request.availableTools.some((tool) => tool.name === FINISH_TOOL_NAME)
+        ) {
             throw new ModelProviderError({
                 code: "invalid_configuration",
                 message: `${FINISH_TOOL_NAME} is reserved by the model provider`,
@@ -347,7 +351,7 @@ export class OpenAICompatibleModelProvider implements ModelProvider {
                     messages: request.messages.map(toOpenAIMessage),
                     tools: [
                         ...request.availableTools.map(toOpenAITool),
-                        finishTool(),
+                        ...(includeFinishTool ? [finishTool()] : []),
                     ],
                     tool_choice: "auto",
                     temperature: 0,
@@ -388,6 +392,6 @@ export class OpenAICompatibleModelProvider implements ModelProvider {
                 cause: error,
             });
         }
-        return parseResponse(body);
+        return parseResponse(body, includeFinishTool);
     }
 }

@@ -320,7 +320,7 @@ function failedToolCallCounts(messages: readonly ModelMessage[]): Map<string, nu
     const signatures = new Map<string, string>();
     const counts = new Map<string, number>();
     for (const message of messages) {
-        if (message.role === "assistant" && message.content === null) {
+        if (message.role === "assistant" && "toolCalls" in message) {
             for (const call of message.toolCalls) {
                 signatures.set(call.id, toolCallSignature(call));
             }

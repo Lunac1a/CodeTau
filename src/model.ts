@@ -14,7 +14,7 @@ export type ModelMessage =
       }
     | {
           readonly role: "assistant";
-          readonly content: null;
+          readonly content: string | null;
           readonly toolCalls: readonly ToolCall[];
       }
     | {
@@ -26,6 +26,7 @@ export type ModelMessage =
 export type ModelRequest = {
     messages: readonly ModelMessage[];
     availableTools: readonly ToolDefinition[];
+    includeFinishTool?: boolean;
 };
 
 export interface ModelProvider {
