@@ -78,17 +78,45 @@ focused on inference and Agent behavior rather than run-number prompt changes.
 
 ## Official tau adapter
 
-The external tau integration is separate from CodeTau-Bench Mini. Phase 5.3
-adds three TypeScript boundaries under `packages/bench/tau/`:
+The external tau integration is separate from CodeTau-Bench Mini. Its
+TypeScript boundaries under `packages/bench/tau/` are:
 
 - `protocol.ts` validates Python-to-TypeScript JSONL messages.
 - `client.ts` owns the Python child process, line framing, correlation,
   timeouts, diagnostics, and exit handling.
 - `adapter.ts` maps tau policies, messages, and dynamic tool definitions onto
   CodeTau's existing model-provider request/response types.
+- `report.ts` records reproducibility metadata and unified run/task/overall
+  metrics.
+- `runner.ts` repeats selected tasks with stable seeds and isolated Python
+  processes.
+- `cli.ts` validates terminal-facing evaluation options.
 
 Tau sessions deliberately disable the coding-only `finish_task` function. The
 official tau environment owns task termination and reward; CodeTau returns only
 assistant text or tau tool calls. The checked-in `--fake` Python driver provides
-deterministic cross-process acceptance coverage without installing tau3-bench.
-The real pinned driver and one-task smoke remain Phase 5.4 work.
+deterministic cross-process acceptance coverage. The pinned real driver executes
+the official environment, tools, orchestrator, and ENV evaluator.
+
+Run the bounded deterministic acceptance set twice per task:
+
+```powershell
+pnpm tau:run -- --task create_task_1 --task update_task_1 --runs 2 --seed 42
+```
+
+Run a selected `mock/base` task with the existing OpenAI-compatible LM Studio
+provider:
+
+```powershell
+pnpm tau:run -- --model-mode lmstudio --task create_task_1 --runs 3
+```
+
+`CODETAU_MODEL`, `CODETAU_MODEL_BASE_URL`, and `CODETAU_MODEL_API_KEY` are
+supported; `--model` and `--base-url` override the first two. Reports are stored
+under `.codetau/tau/<benchmark-id>/report.json`. Each task summary includes
+success rate and observed `pass@k`.
+
+The current runner is deliberately limited to pinned `mock/base` and uses a
+scripted user. Results validate CodeTau's provider integration and official
+environment reward path, but are not official leaderboard submissions and must
+not be compared with full user-simulator benchmark runs.

@@ -87,6 +87,28 @@ counts. Reproducibility metadata records the CodeTau version and Git state,
 official release and commit, `uv.lock` SHA-256, Python and uv versions, protocol
 version, evaluator, user mode, and model mode.
 
+## Repeated runs and local-model evaluation
+
+The general runner accepts repeated `--task` options and creates an independent
+official Python process for every trial:
+
+```powershell
+pnpm tau:run -- --task create_task_1 --task update_task_1 --runs 2 --seed 42
+```
+
+Deterministic mode is limited to those two acceptance tasks. To evaluate the
+existing OpenAI-compatible CodeTau provider against another `mock/base` task,
+start LM Studio and run:
+
+```powershell
+pnpm tau:run -- --model-mode lmstudio --task update_task_with_message_history --runs 3
+```
+
+Optional overrides are `--model`, `--base-url`, and `--output`. The corresponding
+environment variables are `CODETAU_MODEL`, `CODETAU_MODEL_BASE_URL`, and
+`CODETAU_MODEL_API_KEY`. The command exits non-zero if any recorded run fails,
+but writes the failure report first.
+
 ## Reproducibility rules
 
 Comparable reports must record the upstream commit, Python version, uv lock

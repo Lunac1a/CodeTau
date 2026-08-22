@@ -137,6 +137,7 @@ const report = buildTauReport({
             evaluator: "env",
             user: "scripted-smoke",
             modelMode: "deterministic-model",
+            modelBaseUrl: null,
         },
     },
     results: [reportRun],

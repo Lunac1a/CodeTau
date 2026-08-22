@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import type { TauRunStart } from "./client.ts";
 import { TauBridgeClientError, TauBridgeRemoteError } from "./client.ts";
 import { TauAdapterError, type TauSessionResult } from "./adapter.ts";
+import { observedPassAtK } from "../metrics.ts";
 
 export type TauFailureCategory =
     | "none"
@@ -37,6 +38,7 @@ export type TauReproducibilityMetadata = Readonly<{
         evaluator: "env";
         user: string;
         modelMode: string;
+        modelBaseUrl: string | null;
     }>;
 }>;
 
@@ -59,13 +61,14 @@ export type TauReportRun = Readonly<{
 }>;
 
 export type TauReport = Readonly<{
-    version: 1;
+    version: 2;
     benchmarkId: string;
     model: string;
     startedAt: string;
     finishedAt: string;
     reproducibility: TauReproducibilityMetadata;
     results: readonly TauReportRun[];
+    tasks: readonly TauTaskSummary[];
     overall: Readonly<{
         runs: number;
         successes: number;
@@ -78,6 +81,20 @@ export type TauReport = Readonly<{
         toolCallsByName: Readonly<Record<string, number>>;
         failureCategories: Readonly<Record<string, number>>;
     }>;
+}>;
+
+export type TauTaskSummary = Readonly<{
+    domain: string;
+    taskSplit: string;
+    taskId: string | null;
+    runs: number;
+    successes: number;
+    successRate: number;
+    passAtK: Readonly<Record<string, number>>;
+    averageReward: number;
+    averageDurationMs: number;
+    averageToolCalls: number;
+    failureCategories: Readonly<Record<string, number>>;
 }>;
 
 export type TauReportOutput = Readonly<{
@@ -202,14 +219,47 @@ export function buildTauReport(options: Readonly<{
     const failures = options.results
         .filter((result) => result.failureCategory !== "none")
         .map((result) => result.failureCategory);
+    const taskGroups = new Map<string, TauReportRun[]>();
+    for (const result of options.results) {
+        const key = `${result.domain}\0${result.taskSplit}\0${result.taskId ?? ""}`;
+        const group = taskGroups.get(key) ?? [];
+        group.push(result);
+        taskGroups.set(key, group);
+    }
+    const tasks = [...taskGroups.values()].map((taskResults): TauTaskSummary => {
+        const first = taskResults[0] as TauReportRun;
+        const taskSuccesses = taskResults.filter((result) => result.passed).length;
+        const passAtK: Record<string, number> = {};
+        for (let k = 1; k <= taskResults.length; k += 1) {
+            passAtK[`pass@${k}`] = observedPassAtK(taskResults.length, taskSuccesses, k);
+        }
+        return {
+            domain: first.domain,
+            taskSplit: first.taskSplit,
+            taskId: first.taskId,
+            runs: taskResults.length,
+            successes: taskSuccesses,
+            successRate: taskSuccesses / taskResults.length,
+            passAtK,
+            averageReward: average(taskResults.map((result) => result.reward ?? 0)),
+            averageDurationMs: average(taskResults.map((result) => result.durationMs)),
+            averageToolCalls: average(taskResults.map((result) => result.toolCalls)),
+            failureCategories: counts(
+                taskResults
+                    .filter((result) => result.failureCategory !== "none")
+                    .map((result) => result.failureCategory),
+            ),
+        };
+    });
     return {
-        version: 1,
+        version: 2,
         benchmarkId: options.benchmarkId,
         model: options.model,
         startedAt: options.startedAt.toISOString(),
         finishedAt: options.finishedAt.toISOString(),
         reproducibility: structuredClone(options.reproducibility),
         results: structuredClone(options.results),
+        tasks,
         overall: {
             runs: options.results.length,
             successes,

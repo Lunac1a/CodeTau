@@ -43,6 +43,7 @@ const reproducibility: TauReproducibilityMetadata = {
         evaluator: "env",
         user: "scripted-smoke",
         modelMode: "deterministic-model",
+        modelBaseUrl: null,
     },
 };
 
@@ -76,6 +77,7 @@ test("builds a tau report with unified success, timing, tool, and failure metric
     });
 
     assert.equal(report.overall.runs, 2);
+    assert.equal(report.version, 2);
     assert.equal(report.overall.successes, 1);
     assert.equal(report.overall.successRate, 0.5);
     assert.equal(report.overall.averageReward, 0.5);
@@ -85,6 +87,7 @@ test("builds a tau report with unified success, timing, tool, and failure metric
     assert.deepEqual(report.overall.toolCallsByName, { create_task: 1 });
     assert.deepEqual(report.overall.failureCategories, { timeout: 1 });
     assert.equal(report.results[1]?.error?.code, "response_timeout");
+    assert.deepEqual(report.tasks[0]?.passAtK, { "pass@1": 0.5, "pass@2": 1 });
 });
 
 test("classifies model provider failures without exposing their cause", () => {
