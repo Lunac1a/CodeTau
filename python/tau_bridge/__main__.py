@@ -3,7 +3,7 @@
 import argparse
 import sys
 
-from .bridge import UnavailableTauDriver, serve
+from .bridge import serve
 from .fake_driver import FakeTauDriver
 
 sys.stdin.reconfigure(encoding="utf-8")
@@ -18,4 +18,16 @@ parser.add_argument(
 )
 arguments = parser.parse_args()
 
-raise SystemExit(serve(FakeTauDriver() if arguments.fake else UnavailableTauDriver()))
+if arguments.fake:
+    driver = FakeTauDriver()
+else:
+    try:
+        from .tau_driver import OfficialTauDriver
+    except ImportError as error:
+        parser.error(
+            "official tau runtime is unavailable; run with the pinned upstream Python "
+            f"environment ({error})"
+        )
+    driver = OfficialTauDriver()
+
+raise SystemExit(serve(driver))

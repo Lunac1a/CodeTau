@@ -57,8 +57,22 @@ JSON Lines on stdin/stdout:
   transport-level failure signal.
 
 The complete field-level contract and state transitions are documented in
-[`PROTOCOL.md`](PROTOCOL.md). Phase 5.3 will add the TypeScript adapter; the
-real pinned tau driver remains reserved for the later end-to-end slice.
+[`PROTOCOL.md`](PROTOCOL.md). The default entry point now uses the pinned
+official runtime; `--fake` remains available for protocol-only tests.
+
+## Phase 5.4 real-runtime smoke
+
+After the frozen upstream checkout has been prepared under `.codetau/upstream`,
+run:
+
+```powershell
+pnpm tau:smoke
+```
+
+This executes `mock/base/create_task_1` through the official orchestrator,
+environment tools, and environment evaluator. The TypeScript side deliberately
+uses a deterministic model, so the command verifies the integration boundary
+and official reward path; it is not a model-quality benchmark score.
 
 ## Reproducibility rules
 
