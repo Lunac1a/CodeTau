@@ -8,12 +8,14 @@ import { promisify } from "node:util";
 import { TauSessionAdapter } from "../packages/bench/tau/adapter.ts";
 import { ProcessTauBridgeTransport, TauBridgeClient } from "../packages/bench/tau/client.ts";
 import {
+    buildTauEvidenceArtifact,
     buildTauReport,
     completedTauRun,
     failedTauRun,
     nextTauBenchmarkId,
     writeTauReport,
     type TauReportRun,
+    type TauEvidenceArtifactOutput,
 } from "../packages/bench/tau/report.ts";
 import type { ModelProvider, ModelResponse } from "../src/model.ts";
 
@@ -93,10 +95,12 @@ const adapter = new TauSessionAdapter({
 });
 const runStartedAt = Date.now();
 let reportRun: TauReportRun;
+const evidenceArtifacts: TauEvidenceArtifactOutput[] = [];
 try {
     const result = await adapter.run(run);
     assert.equal(result.metadata.upstreamCommit, lock.benchmark.commit);
     reportRun = completedTauRun(run, result);
+    evidenceArtifacts.push(buildTauEvidenceArtifact(run, result.evidence));
 } catch (error) {
     reportRun = failedTauRun(run, Date.now() - runStartedAt, error);
 }
@@ -144,7 +148,7 @@ const report = buildTauReport({
     },
     results: [reportRun],
 });
-const output = await writeTauReport({ report });
+const output = await writeTauReport({ report, evidenceArtifacts });
 
 console.log(JSON.stringify({
     benchmarkId: report.benchmarkId,

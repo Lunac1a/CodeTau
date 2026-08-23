@@ -4,7 +4,11 @@ import { join, resolve } from "node:path";
 
 import type { TauRunStart } from "./client.ts";
 import { TauBridgeClientError, TauBridgeRemoteError } from "./client.ts";
-import { TauAdapterError, type TauSessionResult } from "./adapter.ts";
+import {
+    TauAdapterError,
+    type TauRunEvidence,
+    type TauSessionResult,
+} from "./adapter.ts";
 import { observedPassAtK } from "../metrics.ts";
 
 export type TauFailureCategory =
@@ -60,10 +64,11 @@ export type TauReportRun = Readonly<{
     usage: Readonly<{ inputTokens: number; outputTokens: number }>;
     failureCategory: TauFailureCategory;
     error: Readonly<{ code: string; message: string }> | null;
+    evidenceArtifact: string | null;
 }>;
 
 export type TauReport = Readonly<{
-    version: 3;
+    version: 4;
     benchmarkId: string;
     model: string;
     startedAt: string;
@@ -104,6 +109,43 @@ export type TauReportOutput = Readonly<{
     reportPath: string;
     benchmarkDirectory: string;
 }>;
+
+export type TauEvidenceArtifact = Readonly<{
+    version: 1;
+    run: TauRunStart;
+    evidence: TauRunEvidence;
+}>;
+
+export type TauEvidenceArtifactOutput = Readonly<{
+    path: string;
+    artifact: TauEvidenceArtifact;
+}>;
+
+function safeArtifactSegment(value: string): string {
+    const safe = value.replace(/[^A-Za-z0-9._-]/gu, "_");
+    return safe.length === 0 ? "default" : safe;
+}
+
+export function buildTauEvidenceArtifact(
+    run: TauRunStart,
+    evidence: TauRunEvidence,
+): TauEvidenceArtifactOutput {
+    const name = [
+        safeArtifactSegment(run.domain),
+        safeArtifactSegment(run.taskSplit),
+        safeArtifactSegment(run.taskId ?? "default"),
+        `trial-${run.trial}`,
+        `seed-${run.seed ?? "none"}`,
+    ].join("-");
+    return {
+        path: `evidence/${name}.json`,
+        artifact: {
+            version: 1,
+            run: structuredClone(run),
+            evidence: structuredClone(evidence),
+        },
+    };
+}
 
 function average(values: readonly number[]): number {
     return values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -165,6 +207,7 @@ export function completedTauRun(
     result: TauSessionResult,
 ): TauReportRun {
     const passed = result.status === "completed" && result.reward === 1;
+    const evidenceArtifact = buildTauEvidenceArtifact(run, result.evidence);
     return {
         ...run,
         status: result.status,
@@ -177,6 +220,7 @@ export function completedTauRun(
         usage: structuredClone(result.usage),
         failureCategory: passed ? "none" : "benchmark_reward",
         error: null,
+        evidenceArtifact: evidenceArtifact.path,
     };
 }
 
@@ -198,6 +242,7 @@ export function failedTauRun(
         usage: { inputTokens: 0, outputTokens: 0 },
         failureCategory: failure.category,
         error: { code: failure.code, message: failure.message },
+        evidenceArtifact: null,
     };
 }
 
@@ -254,7 +299,7 @@ export function buildTauReport(options: Readonly<{
         };
     });
     return {
-        version: 3,
+        version: 4,
         benchmarkId: options.benchmarkId,
         model: options.model,
         startedAt: options.startedAt.toISOString(),
@@ -280,11 +325,39 @@ export function buildTauReport(options: Readonly<{
 export async function writeTauReport(options: Readonly<{
     report: TauReport;
     outputDirectory?: string;
+    evidenceArtifacts?: readonly TauEvidenceArtifactOutput[];
 }>): Promise<TauReportOutput> {
+    const expectedEvidencePaths = options.report.results
+        .map((result) => result.evidenceArtifact)
+        .filter((path): path is string => path !== null)
+        .sort();
+    const evidenceArtifacts = options.evidenceArtifacts ?? [];
+    const actualEvidencePaths = evidenceArtifacts.map((evidence) => evidence.path).sort();
+    if (
+        expectedEvidencePaths.length !== actualEvidencePaths.length ||
+        expectedEvidencePaths.some((path, index) => path !== actualEvidencePaths[index])
+    ) {
+        throw new Error("Tau report evidence artifacts do not match completed runs");
+    }
     const outputDirectory = resolve(options.outputDirectory ?? ".codetau/tau");
     const benchmarkDirectory = join(outputDirectory, options.report.benchmarkId);
     await mkdir(outputDirectory, { recursive: true });
     await mkdir(benchmarkDirectory, { recursive: false });
+    const evidenceDirectory = join(benchmarkDirectory, "evidence");
+    if (evidenceArtifacts.length > 0) {
+        await mkdir(evidenceDirectory, { recursive: false });
+    }
+    for (const evidence of evidenceArtifacts) {
+        if (!evidence.path.startsWith("evidence/") || evidence.path.includes("..")) {
+            throw new Error(`Invalid tau evidence artifact path: ${evidence.path}`);
+        }
+        const evidencePath = join(benchmarkDirectory, ...evidence.path.split("/"));
+        await writeFile(
+            evidencePath,
+            `${JSON.stringify(evidence.artifact, null, 2)}\n`,
+            "utf8",
+        );
+    }
     const reportPath = join(benchmarkDirectory, "report.json");
     await writeFile(reportPath, `${JSON.stringify(options.report, null, 2)}\n`, "utf8");
     return { report: options.report, reportPath, benchmarkDirectory };

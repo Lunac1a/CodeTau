@@ -220,7 +220,14 @@ class OfficialTauDriver:
             reward = simulation.reward_info.reward
             if reward is None:
                 raise RuntimeError("tau evaluator returned no reward")
-            self._agent.events.put(RunOutcome(float(reward), "completed"))
+            self._agent.events.put(
+                RunOutcome(
+                    reward=float(reward),
+                    status="completed",
+                    termination_reason=simulation.termination_reason.value,
+                    reward_info=simulation.reward_info.model_dump(mode="json"),
+                )
+            )
         except BaseException as error:
             self._agent.events.put(error)
 

@@ -29,7 +29,7 @@ evaluation, the official `base` task split, and the `mock` domain. Voice,
 `banking_knowledge`, Gym/RL, leaderboard submission, and broad domain runs are
 out of scope until the minimal integration is proven.
 
-## JSONL protocol v1 boundary
+## JSONL protocol v2 boundary
 
 The TypeScript adapter owns CodeTau sessions, model calls, event persistence,
 and report collection. The Python process owns the pinned tau runtime, domain,
@@ -39,7 +39,7 @@ The TypeScript adapter starts the Python bridge and communicates over UTF-8
 JSON Lines on stdin/stdout:
 
 - Every line is one JSON object with exactly `version`, `id`, `type`, and
-  `payload` fields. `version` is `1`; `id` correlates a request and response.
+  `payload` fields. `version` is `2`; `id` correlates a request and response.
 - Stdout is protocol-only. Human diagnostics and upstream logs go to stderr.
 - TypeScript sends `handshake`, `run_start`, `agent_init_result`,
   `agent_turn_result`, and `shutdown` messages.
@@ -51,7 +51,8 @@ JSON Lines on stdin/stdout:
   `ToolMessage`, or `MultiToolMessage`). Its matching `agent_turn_result`
   carries CodeTau's assistant text and/or tool calls in an upstream-neutral
   representation.
-- `run_result` carries the official reward/result plus reproducibility metadata.
+- `run_result` carries the official reward/result, reproducibility metadata,
+  termination reason, and upstream reward diagnostics.
 - `error` is structured and includes a stable CodeTau-owned error code; a fatal
   error terminates the current run, while process exit remains the final
   transport-level failure signal.
@@ -86,6 +87,12 @@ contains success rate, average reward, average duration, tool totals, and failur
 counts. Reproducibility metadata records the CodeTau version and Git state,
 official release and commit, `uv.lock` SHA-256, Python and uv versions, protocol
 version, evaluator, user mode, and model mode.
+
+Report v4 keeps that summary compact and links every completed run to an
+`evidence/*.json` artifact. Each artifact contains official reward diagnostics,
+termination reason, the domain policy and tool names, and the ordered
+user/tool/assistant trajectory recorded by CodeTau. Evidence is observational;
+it does not alter the official environment or reward.
 
 ## Repeated runs and local-model evaluation
 

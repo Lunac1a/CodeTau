@@ -49,7 +49,7 @@ class JsonlProtocolTest(unittest.TestCase):
 
     def test_rejects_duplicate_json_fields(self) -> None:
         line = (
-            '{"version":1,"id":"one","id":"two",'
+            f'{{"version":{PROTOCOL_VERSION},"id":"one","id":"two",'
             '"type":"shutdown","payload":{}}'
         )
 
@@ -70,7 +70,7 @@ class JsonlProtocolTest(unittest.TestCase):
     def test_rejects_non_finite_numbers_and_oversized_lines(self) -> None:
         with self.assertRaisesRegex(ProtocolViolation, "non-finite JSON number"):
             decode_line(
-                '{"version":1,"id":"one","type":"run_start",'
+                f'{{"version":{PROTOCOL_VERSION},"id":"one","type":"run_start",'
                 '"payload":{"domain":"mock","taskSplit":"base",'
                 '"taskId":null,"trial":1,"seed":NaN}}',
                 "host-to-bridge",
@@ -106,12 +106,16 @@ class JsonlProtocolTest(unittest.TestCase):
                 "status": "completed",
                 "metadata": {
                     "upstreamCommit": "abc",
-                    "protocolVersion": 1,
+                    "protocolVersion": PROTOCOL_VERSION,
                     "domain": "mock",
                     "taskSplit": "base",
                     "taskId": None,
                     "trial": 1,
                     "seed": None,
+                },
+                "diagnostics": {
+                    "terminationReason": "user_stop",
+                    "rewardInfo": {"reward": 2},
                 },
             },
         )

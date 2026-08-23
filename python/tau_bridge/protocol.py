@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable, Literal
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 MAX_LINE_LENGTH = 1_048_576
 
 Direction = Literal["host-to-bridge", "bridge-to-host"]
@@ -326,7 +326,11 @@ def _metadata(value: Any) -> dict[str, Any]:
 
 
 def _run_result(value: Any) -> dict[str, Any]:
-    item = _object(value, "run_result payload", {"reward", "status", "metadata"})
+    item = _object(
+        value,
+        "run_result payload",
+        {"reward", "status", "metadata", "diagnostics"},
+    )
     reward = item["reward"]
     if type(reward) not in {int, float} or not math.isfinite(reward) or not 0 <= reward <= 1:
         raise ProtocolViolation(
@@ -336,10 +340,25 @@ def _run_result(value: Any) -> dict[str, Any]:
         raise ProtocolViolation(
             "invalid_payload", "run_result status must be completed or failed"
         )
+    diagnostics = _object(
+        item["diagnostics"],
+        "run_result diagnostics",
+        {"terminationReason", "rewardInfo"},
+    )
     return {
         "reward": reward,
         "status": item["status"],
         "metadata": _metadata(item["metadata"]),
+        "diagnostics": {
+            "terminationReason": _text(
+                diagnostics["terminationReason"],
+                "run_result diagnostics terminationReason",
+            ),
+            "rewardInfo": _object_or_json(
+                diagnostics["rewardInfo"],
+                "run_result diagnostics rewardInfo",
+            ),
+        },
     }
 
 

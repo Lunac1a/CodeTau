@@ -49,7 +49,16 @@ class FakeTauDriver:
             )
         if message["content"] is None:
             raise RuntimeError("fake driver expected a final text response")
-        return RunOutcome(reward=1.0, status="completed")
+        return RunOutcome(
+            reward=1.0,
+            status="completed",
+            termination_reason="user_stop",
+            reward_info={
+                "reward": 1.0,
+                "reward_basis": ["DB"],
+                "reward_breakdown": {"DB": 1.0},
+            },
+        )
 
     def shutdown(self) -> None:
         return None

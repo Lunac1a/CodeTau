@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
 
 import {
+    TAU_PROTOCOL_VERSION,
     encodeHostMessage,
     parseBridgeLine,
     TAU_MAX_LINE_BYTES,
@@ -320,12 +321,12 @@ export class TauBridgeClient {
         this.#expectState("new");
         const id = this.#nextId();
         await this.#transport.send({
-            version: 1,
+            version: TAU_PROTOCOL_VERSION,
             id,
             type: "handshake",
             payload: {
                 client: { name: clientName, version: clientVersion },
-                protocolVersion: 1,
+                protocolVersion: TAU_PROTOCOL_VERSION,
             },
         });
         const response = await this.#receive(["handshake_result"], [id]);
@@ -339,7 +340,7 @@ export class TauBridgeClient {
         this.#expectState("ready");
         const id = this.#nextId();
         await this.#transport.send({
-            version: 1,
+            version: TAU_PROTOCOL_VERSION,
             id,
             type: "run_start",
             payload: options,
@@ -358,7 +359,7 @@ export class TauBridgeClient {
     async acknowledgeInitialization(initId: string): Promise<TauRunEvent> {
         this.#expectState("running");
         await this.#transport.send({
-            version: 1,
+            version: TAU_PROTOCOL_VERSION,
             id: initId,
             type: "agent_init_result",
             payload: {},
@@ -372,7 +373,7 @@ export class TauBridgeClient {
     ): Promise<TauRunEvent> {
         this.#expectState("running");
         await this.#transport.send({
-            version: 1,
+            version: TAU_PROTOCOL_VERSION,
             id: turnId,
             type: "agent_turn_result",
             payload: { message },
@@ -409,7 +410,7 @@ export class TauBridgeClient {
         this.#expectState("ready");
         const id = this.#nextId();
         await this.#transport.send({
-            version: 1,
+            version: TAU_PROTOCOL_VERSION,
             id,
             type: "shutdown",
             payload: {},

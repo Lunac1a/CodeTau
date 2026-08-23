@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .protocol import PROTOCOL_VERSION
+
 _SHA1 = re.compile(r"^[0-9a-f]{40}$")
 
 
@@ -102,7 +104,7 @@ def parse_integration_contract(raw: Any) -> IntegrationContract:
         raise ValueError("benchmark tagObject and commit must be full SHA-1 values")
     if (
         type(transport["protocolVersion"]) is not int
-        or transport["protocolVersion"] != 1
+        or transport["protocolVersion"] != PROTOCOL_VERSION
     ):
         raise ValueError("unsupported JSONL protocol version")
 

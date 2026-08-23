@@ -24,7 +24,7 @@
   },
   "transport": {
     "kind": "jsonl-stdio",
-    "protocolVersion": 1,
+    "protocolVersion": 2,
     "encoding": "utf-8"
   }
 }

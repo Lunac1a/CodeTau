@@ -10,11 +10,17 @@ from tau_bridge.bridge import (
     RunOutcome,
     serve,
 )
+from tau_bridge.protocol import PROTOCOL_VERSION
 
 
 def message(message_id: str, message_type: str, payload: object) -> str:
     return json.dumps(
-        {"version": 1, "id": message_id, "type": message_type, "payload": payload}
+        {
+            "version": PROTOCOL_VERSION,
+            "id": message_id,
+            "type": message_type,
+            "payload": payload,
+        }
     )
 
 
@@ -22,7 +28,10 @@ def handshake(message_id: str = "hello") -> str:
     return message(
         message_id,
         "handshake",
-        {"client": {"name": "codetau", "version": "0.1.0"}, "protocolVersion": 1},
+        {
+            "client": {"name": "codetau", "version": "0.1.0"},
+            "protocolVersion": PROTOCOL_VERSION,
+        },
     )
 
 
@@ -102,7 +111,16 @@ class FakeTauDriver:
                     "result": {"status": "found"},
                 }
             )
-        return RunOutcome(reward=1.0, status="completed")
+        return RunOutcome(
+            reward=1.0,
+            status="completed",
+            termination_reason="user_stop",
+            reward_info={
+                "reward": 1.0,
+                "reward_basis": ["DB"],
+                "reward_breakdown": {"DB": 1.0},
+            },
+        )
 
     def shutdown(self) -> None:
         self.closed = True
@@ -152,6 +170,17 @@ class BridgeServiceTest(unittest.TestCase):
             ],
         )
         self.assertEqual(output[4]["payload"]["reward"], 1.0)
+        self.assertEqual(
+            output[4]["payload"]["diagnostics"],
+            {
+                "terminationReason": "user_stop",
+                "rewardInfo": {
+                    "reward": 1.0,
+                    "reward_basis": ["DB"],
+                    "reward_breakdown": {"DB": 1.0},
+                },
+            },
+        )
         self.assertEqual(
             output[4]["payload"]["metadata"]["upstreamCommit"],
             "fc0055dc4e0a316c3f83133267fbd6faaa770992",
@@ -271,7 +300,7 @@ class BridgeServiceTest(unittest.TestCase):
             "handshake",
             {
                 "client": {"name": "codetau", "version": "0.1.0"},
-                "protocolVersion": 2,
+                "protocolVersion": PROTOCOL_VERSION + 1,
             },
         )
 

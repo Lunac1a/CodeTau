@@ -64,6 +64,15 @@ test("runs CodeTau model turns through the fake Python tau bridge", async () => 
     assert.deepEqual(result.toolCallsByName, { lookup_order: 1 });
     assert.equal(result.durationMs, 250);
     assert.deepEqual(result.usage, { inputTokens: 50, outputTokens: 11 });
+    assert.equal(result.evidence.official.terminationReason, "user_stop");
+    assert.deepEqual(result.evidence.official.rewardInfo.reward_breakdown, {
+        DB: 1,
+    });
+    assert.equal(result.evidence.session.trajectory.length, 4);
+    assert.deepEqual(
+        result.evidence.session.trajectory.map((event) => event.direction),
+        ["tau_to_agent", "agent_to_tau", "tau_to_agent", "agent_to_tau"],
+    );
     assert.equal(model.requests.length, 2);
     assert.equal(model.requests[0]?.includeFinishTool, false);
     assert.deepEqual(

@@ -2,6 +2,7 @@ import type { TauSessionResult } from "./adapter.ts";
 import type { TauRunStart } from "./client.ts";
 import {
     buildTauReport,
+    buildTauEvidenceArtifact,
     completedTauRun,
     failedTauRun,
     nextTauBenchmarkId,
@@ -9,6 +10,7 @@ import {
     type TauReportOutput,
     type TauReportRun,
     type TauReproducibilityMetadata,
+    type TauEvidenceArtifactOutput,
 } from "./report.ts";
 
 export type TauEvaluationTask = Readonly<{
@@ -54,6 +56,7 @@ export async function runTauEvaluation(
     const startedAt = now();
     const benchmarkId = options.nextBenchmarkId?.(startedAt) ?? nextTauBenchmarkId(startedAt);
     const results: TauReportRun[] = [];
+    const evidenceArtifacts: TauEvidenceArtifactOutput[] = [];
 
     for (let taskIndex = 0; taskIndex < options.tasks.length; taskIndex += 1) {
         const task = options.tasks[taskIndex] as TauEvaluationTask;
@@ -68,7 +71,9 @@ export async function runTauEvaluation(
             );
             const runStartedAt = now().getTime();
             try {
-                results.push(completedTauRun(run, await options.runSession(run)));
+                const session = await options.runSession(run);
+                results.push(completedTauRun(run, session));
+                evidenceArtifacts.push(buildTauEvidenceArtifact(run, session.evidence));
             } catch (error) {
                 results.push(failedTauRun(run, now().getTime() - runStartedAt, error));
             }
@@ -87,5 +92,9 @@ export async function runTauEvaluation(
         reproducibility: options.reproducibility,
         results,
     });
-    return await writeTauReport({ report, outputDirectory: options.outputDirectory });
+    return await writeTauReport({
+        report,
+        evidenceArtifacts,
+        outputDirectory: options.outputDirectory,
+    });
 }

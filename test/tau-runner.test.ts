@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -20,7 +20,7 @@ const reproducibility: TauReproducibilityMetadata = {
         uvLockSha256: "d".repeat(64),
     },
     runtime: { python: "Python 3.12.10", uv: "uv 0.12.5" },
-    protocolVersion: 1,
+    protocolVersion: 2,
     evaluation: {
         modality: "text",
         communication: "half-duplex",
@@ -32,6 +32,20 @@ const reproducibility: TauReproducibilityMetadata = {
         modelBaseUrl: null,
     },
 };
+
+const evidence = {
+    schemaVersion: 1,
+    official: {
+        terminationReason: "user_stop",
+        rewardInfo: { reward: 1, reward_breakdown: { DB: 1 } },
+    },
+    session: {
+        domainPolicy: "Follow the policy.",
+        toolNames: ["tool"],
+        messageHistory: [],
+        trajectory: [],
+    },
+} as const;
 
 test("runs multiple tau tasks and trials with stable distinct seeds", async () => {
     const directory = await mkdtemp(join(tmpdir(), "codetau-tau-runner-"));
@@ -53,18 +67,27 @@ test("runs multiple tau tasks and trials with stable distinct seeds", async () =
                 return {
                     reward: 1,
                     status: "completed",
-                    metadata: { upstreamCommit: "c".repeat(40), protocolVersion: 1, ...run },
+                    metadata: { upstreamCommit: "c".repeat(40), protocolVersion: 2, ...run },
                     modelTurns: 2,
                     toolCalls: 1,
                     toolCallsByName: { tool: 1 },
                     durationMs: 25,
                     usage: { inputTokens: 5, outputTokens: 2 },
+                    evidence,
                 };
             },
         });
         assert.deepEqual(seeds, [10, 11, 12, 13]);
         assert.equal(output.report.results.length, 4);
         assert.equal(output.report.tasks.length, 2);
+        assert.ok(output.report.results.every((result) => result.evidenceArtifact));
+        await Promise.all(
+            output.report.results.map(async (result) => {
+                await assert.doesNotReject(
+                    readFile(join(output.benchmarkDirectory, result.evidenceArtifact as string)),
+                );
+            }),
+        );
         assert.deepEqual(output.report.tasks.map((task) => task.passAtK), [
             { "pass@1": 1, "pass@2": 1 },
             { "pass@1": 1, "pass@2": 1 },

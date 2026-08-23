@@ -3,13 +3,14 @@ import test from "node:test";
 
 import {
     parseBridgeLine,
+    TAU_PROTOCOL_VERSION,
     TauProtocolError,
 } from "../packages/bench/tau/protocol.ts";
 
 test("parses a strict tau agent turn", () => {
     const message = parseBridgeLine(
         JSON.stringify({
-            version: 1,
+            version: TAU_PROTOCOL_VERSION,
             id: "run-1:turn:1",
             type: "agent_turn",
             payload: {
@@ -34,7 +35,7 @@ test("rejects unknown tau bridge fields and message types", () => {
         () =>
             parseBridgeLine(
                 JSON.stringify({
-                    version: 1,
+                    version: TAU_PROTOCOL_VERSION,
                     id: "result-1",
                     type: "shutdown_result",
                     payload: {},
@@ -51,7 +52,7 @@ test("rejects unknown tau bridge fields and message types", () => {
         () =>
             parseBridgeLine(
                 JSON.stringify({
-                    version: 1,
+                    version: TAU_PROTOCOL_VERSION,
                     id: "result-1",
                     type: "host_only_message",
                     payload: {},
@@ -63,4 +64,42 @@ test("rejects unknown tau bridge fields and message types", () => {
             return true;
         },
     );
+});
+
+test("parses official diagnostics from a tau run result", () => {
+    const message = parseBridgeLine(JSON.stringify({
+        version: TAU_PROTOCOL_VERSION,
+        id: "run-1",
+        type: "run_result",
+        payload: {
+            reward: 0,
+            status: "completed",
+            metadata: {
+                upstreamCommit: "abc",
+                protocolVersion: TAU_PROTOCOL_VERSION,
+                domain: "airline",
+                taskSplit: "base",
+                taskId: "0",
+                trial: 1,
+                seed: 42,
+            },
+            diagnostics: {
+                terminationReason: "user_stop",
+                rewardInfo: {
+                    reward: 0,
+                    reward_basis: ["DB", "COMMUNICATE"],
+                    reward_breakdown: { DB: 0, COMMUNICATE: 1 },
+                },
+            },
+        },
+    }));
+
+    assert.equal(message.type, "run_result");
+    if (message.type === "run_result") {
+        assert.equal(message.payload.diagnostics.terminationReason, "user_stop");
+        assert.deepEqual(message.payload.diagnostics.rewardInfo.reward_breakdown, {
+            DB: 0,
+            COMMUNICATE: 1,
+        });
+    }
 });

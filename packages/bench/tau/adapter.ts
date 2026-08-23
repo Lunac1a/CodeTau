@@ -6,10 +6,35 @@ import type {
     TauAssistantMessage,
     TauHistoryMessage,
     TauInputMessage,
+    TauRunDiagnostics,
     TauRunMetadata,
     TauToolCall,
     TauToolDefinition,
 } from "./protocol.ts";
+
+export type TauTraceEvent = Readonly<
+    | {
+          sequence: number;
+          direction: "tau_to_agent";
+          message: TauInputMessage;
+      }
+    | {
+          sequence: number;
+          direction: "agent_to_tau";
+          message: TauAssistantMessage;
+      }
+>;
+
+export type TauRunEvidence = Readonly<{
+    schemaVersion: 1;
+    official: TauRunDiagnostics;
+    session: Readonly<{
+        domainPolicy: string;
+        toolNames: readonly string[];
+        messageHistory: readonly TauHistoryMessage[];
+        trajectory: readonly TauTraceEvent[];
+    }>;
+}>;
 
 export class TauAdapterError extends Error {
     readonly code: string;
@@ -30,6 +55,7 @@ export type TauSessionResult = Readonly<{
     toolCallsByName: Readonly<Record<string, number>>;
     durationMs: number;
     usage: ModelUsage;
+    evidence: TauRunEvidence;
 }>;
 
 export type TauSessionAdapterOptions = Readonly<{
@@ -162,6 +188,8 @@ export class TauSessionAdapter {
         let outputTokens = 0;
         let toolCalls = 0;
         const toolCallsByName: Record<string, number> = {};
+        const trajectory: TauTraceEvent[] = [];
+        let sequence = 0;
         const startedAt = this.#now();
         try {
             await this.#client.handshake();
@@ -184,6 +212,11 @@ export class TauSessionAdapter {
                 initialization.id,
             );
             while (event.type === "agent_turn") {
+                trajectory.push({
+                    sequence: ++sequence,
+                    direction: "tau_to_agent",
+                    message: structuredClone(event.payload.message),
+                });
                 appendInput(messages, event.payload.message);
                 let response: Awaited<ReturnType<ModelProvider["generate"]>>;
                 try {
@@ -208,6 +241,11 @@ export class TauSessionAdapter {
                     toolCallsByName[call.name] = (toolCallsByName[call.name] ?? 0) + 1;
                 }
                 messages.push(assistant.model);
+                trajectory.push({
+                    sequence: ++sequence,
+                    direction: "agent_to_tau",
+                    message: structuredClone(assistant.protocol),
+                });
                 event = await this.#client.respondToTurn(
                     event.id,
                     assistant.protocol,
@@ -224,6 +262,18 @@ export class TauSessionAdapter {
                 toolCallsByName,
                 durationMs: this.#now() - startedAt,
                 usage: { inputTokens, outputTokens },
+                evidence: {
+                    schemaVersion: 1,
+                    official: structuredClone(event.payload.diagnostics),
+                    session: {
+                        domainPolicy: initialization.payload.domainPolicy,
+                        toolNames: initialization.payload.tools.map((tool) => tool.name),
+                        messageHistory: structuredClone(
+                            initialization.payload.messageHistory,
+                        ),
+                        trajectory,
+                    },
+                },
             };
         } finally {
             if (!completed) {

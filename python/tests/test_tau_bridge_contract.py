@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from tau_bridge.contract import load_integration_contract, parse_integration_contract
+from tau_bridge.protocol import PROTOCOL_VERSION
 
 
 class IntegrationContractTest(unittest.TestCase):
@@ -21,7 +22,7 @@ class IntegrationContractTest(unittest.TestCase):
         self.assertEqual(contract.task_split, "base")
         self.assertEqual(contract.smoke_domain, "mock")
         self.assertEqual(contract.transport_kind, "jsonl-stdio")
-        self.assertEqual(contract.protocol_version, 1)
+        self.assertEqual(contract.protocol_version, PROTOCOL_VERSION)
 
     def test_rejects_a_short_movable_commit_reference(self) -> None:
         source = Path(__file__).parents[1] / "tau_bridge" / "upstream-lock.json"

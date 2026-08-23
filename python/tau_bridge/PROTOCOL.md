@@ -1,10 +1,10 @@
-# CodeTau Tau Bridge Protocol v1
+# CodeTau Tau Bridge Protocol v2
 
-Protocol v1 is a bidirectional request/response protocol over UTF-8 JSON Lines.
+Protocol v2 is a bidirectional request/response protocol over UTF-8 JSON Lines.
 Each line is exactly one object:
 
 ```json
-{"version":1,"id":"run-1:turn:1","type":"agent_turn_result","payload":{}}
+{"version":2,"id":"run-1:turn:1","type":"agent_turn_result","payload":{}}
 ```
 
 The envelope accepts exactly four fields. IDs are 1-128 characters and use
@@ -36,15 +36,16 @@ waiting_for_turn --agent_turn_result--> waiting_for_turn | ready
 ready --shutdown--> closed
 ```
 
-Only one run may be active. Protocol v1 currently accepts the locked `mock`
-domain and `base` split. EOF before `shutdown_result` is a transport failure.
+Only one run may be active. The default process accepts the locked `mock`
+domain and `base` split; the CLI may explicitly permit one supported official
+domain. EOF before `shutdown_result` is a transport failure.
 
 ## Payloads
 
 ### `handshake`
 
 ```json
-{"client":{"name":"codetau","version":"0.1.0"},"protocolVersion":1}
+{"client":{"name":"codetau","version":"0.1.0"},"protocolVersion":2}
 ```
 
 `handshake_result` returns the bridge identity and the locked upstream display
@@ -79,9 +80,13 @@ or both. Each tool call has `id`, `name`, and object-valued `arguments`.
 
 ### `run_result`
 
-Contains a reward from 0 to 1, `completed` or `failed` status, and metadata:
-locked upstream commit, protocol version, domain, task split, task ID, trial,
-and seed. The bridge constructs this metadata rather than trusting the driver.
+Contains a reward from 0 to 1, `completed` or `failed` status, metadata, and
+official diagnostics. Metadata contains the locked upstream commit, protocol
+version, domain, task split, task ID, trial, and seed. The bridge constructs it
+rather than trusting the driver. Diagnostics contain the official termination
+reason and JSON-compatible upstream `RewardInfo` object. Full conversation
+content is recorded by the TypeScript host instead of crossing the 1 MiB JSONL
+boundary in this final message.
 
 ### `error`
 

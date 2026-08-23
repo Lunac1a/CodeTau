@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 
-export const TAU_PROTOCOL_VERSION = 1;
+export const TAU_PROTOCOL_VERSION = 2;
 export const TAU_MAX_LINE_BYTES = 1_048_576;
 
 const idPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
@@ -70,8 +70,13 @@ export type TauRunMetadata = Readonly<{
     seed: number | null;
 }>;
 
+export type TauRunDiagnostics = Readonly<{
+    terminationReason: string;
+    rewardInfo: Readonly<Record<string, unknown>>;
+}>;
+
 type Envelope<Type extends string, Payload> = Readonly<{
-    version: 1;
+    version: 2;
     id: string;
     type: Type;
     payload: Payload;
@@ -106,6 +111,7 @@ export type BridgeMessage =
               reward: number;
               status: "completed" | "failed";
               metadata: TauRunMetadata;
+              diagnostics: TauRunDiagnostics;
           }>
       >
     | Envelope<
@@ -124,7 +130,7 @@ export type HostMessage =
           "handshake",
           Readonly<{
               client: Readonly<{ name: string; version: string }>;
-              protocolVersion: 1;
+              protocolVersion: 2;
           }>
       >
     | Envelope<
@@ -397,6 +403,7 @@ function parseBridgePayload(type: string, value: unknown): BridgeMessage["payloa
             "reward",
             "status",
             "metadata",
+            "diagnostics",
         ]);
         if (
             typeof item.reward !== "number" ||
@@ -418,6 +425,10 @@ function parseBridgePayload(type: string, value: unknown): BridgeMessage["payloa
             "trial",
             "seed",
         ]);
+        const diagnostics = exact(item.diagnostics, "run_result diagnostics", [
+            "terminationReason",
+            "rewardInfo",
+        ]);
         return {
             reward: item.reward,
             status: item.status,
@@ -429,6 +440,16 @@ function parseBridgePayload(type: string, value: unknown): BridgeMessage["payloa
                 taskId: nullableText(metadata.taskId, "metadata.taskId"),
                 trial: integer(metadata.trial, "metadata.trial", 1),
                 seed: nullableInteger(metadata.seed, "metadata.seed"),
+            },
+            diagnostics: {
+                terminationReason: text(
+                    diagnostics.terminationReason,
+                    "diagnostics.terminationReason",
+                ),
+                rewardInfo: objectValue(
+                    diagnostics.rewardInfo,
+                    "diagnostics.rewardInfo",
+                ),
             },
         };
     }
@@ -491,7 +512,7 @@ export function parseBridgeLine(line: string): BridgeMessage {
     if (envelope.version !== TAU_PROTOCOL_VERSION) {
         throw new TauProtocolError(
             "unsupported_version",
-            "bridge envelope version must be 1",
+            `bridge envelope version must be ${TAU_PROTOCOL_VERSION}`,
         );
     }
     const id = text(envelope.id, "bridge envelope.id");
@@ -506,7 +527,7 @@ export function parseBridgeLine(line: string): BridgeMessage {
         );
     }
     return {
-        version: 1,
+        version: TAU_PROTOCOL_VERSION,
         id,
         type,
         payload: parseBridgePayload(type, envelope.payload),

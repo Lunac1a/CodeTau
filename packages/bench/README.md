@@ -116,6 +116,11 @@ supported; `--model` and `--base-url` override the first two. Reports are stored
 under `.codetau/tau/<benchmark-id>/report.json`. Each task summary includes
 success rate and observed `pass@k`.
 
+Report v4 links each completed run to an `evidence/*.json` artifact containing
+the official reward breakdown and termination reason plus CodeTau's ordered
+interaction trajectory. This keeps the summary compact while preserving the
+exact evidence needed to diagnose a failed run.
+
 The deterministic acceptance mode is deliberately limited to pinned `mock/base`
 and uses a scripted user. Those results validate CodeTau's provider integration
 and official environment reward path, but are not official leaderboard

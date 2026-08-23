@@ -43,6 +43,8 @@ class AgentTurn:
 class RunOutcome:
     reward: float
     status: str
+    termination_reason: str
+    reward_info: dict[str, Any]
 
 
 DriverEvent = AgentTurn | RunOutcome
@@ -267,6 +269,10 @@ class BridgeService:
                 {
                     "reward": event.reward,
                     "status": event.status,
+                    "diagnostics": {
+                        "terminationReason": event.termination_reason,
+                        "rewardInfo": event.reward_info,
+                    },
                     "metadata": {
                         "upstreamCommit": self._contract.commit,
                         "protocolVersion": PROTOCOL_VERSION,
