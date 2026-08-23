@@ -45,6 +45,9 @@ export type TauReproducibilityMetadata = Readonly<{
         userBaseUrl: string | null;
         modelMode: string;
         modelBaseUrl: string | null;
+        policyVerifier: "off" | "model";
+        verifierModel: string | null;
+        verifierBaseUrl: string | null;
     }>;
 }>;
 
@@ -62,13 +65,19 @@ export type TauReportRun = Readonly<{
     toolCalls: number;
     toolCallsByName: Readonly<Record<string, number>>;
     usage: Readonly<{ inputTokens: number; outputTokens: number }>;
+    policyVerifier: Readonly<{
+        checks: number;
+        allows: number;
+        denials: number;
+        usage: Readonly<{ inputTokens: number; outputTokens: number }>;
+    }>;
     failureCategory: TauFailureCategory;
     error: Readonly<{ code: string; message: string }> | null;
     evidenceArtifact: string | null;
 }>;
 
 export type TauReport = Readonly<{
-    version: 4;
+    version: 5;
     benchmarkId: string;
     model: string;
     startedAt: string;
@@ -85,6 +94,8 @@ export type TauReport = Readonly<{
         averageToolCalls: number;
         totalModelTurns: number;
         totalToolCalls: number;
+        totalPolicyChecks: number;
+        totalPolicyDenials: number;
         toolCallsByName: Readonly<Record<string, number>>;
         failureCategories: Readonly<Record<string, number>>;
     }>;
@@ -218,6 +229,7 @@ export function completedTauRun(
         toolCalls: result.toolCalls,
         toolCallsByName: structuredClone(result.toolCallsByName),
         usage: structuredClone(result.usage),
+        policyVerifier: structuredClone(result.policyVerifier),
         failureCategory: passed ? "none" : "benchmark_reward",
         error: null,
         evidenceArtifact: evidenceArtifact.path,
@@ -240,6 +252,12 @@ export function failedTauRun(
         toolCalls: 0,
         toolCallsByName: {},
         usage: { inputTokens: 0, outputTokens: 0 },
+        policyVerifier: {
+            checks: 0,
+            allows: 0,
+            denials: 0,
+            usage: { inputTokens: 0, outputTokens: 0 },
+        },
         failureCategory: failure.category,
         error: { code: failure.code, message: failure.message },
         evidenceArtifact: null,
@@ -299,7 +317,7 @@ export function buildTauReport(options: Readonly<{
         };
     });
     return {
-        version: 4,
+        version: 5,
         benchmarkId: options.benchmarkId,
         model: options.model,
         startedAt: options.startedAt.toISOString(),
@@ -316,6 +334,14 @@ export function buildTauReport(options: Readonly<{
             averageToolCalls: average(options.results.map((result) => result.toolCalls)),
             totalModelTurns: options.results.reduce((sum, result) => sum + result.modelTurns, 0),
             totalToolCalls: options.results.reduce((sum, result) => sum + result.toolCalls, 0),
+            totalPolicyChecks: options.results.reduce(
+                (sum, result) => sum + result.policyVerifier.checks,
+                0,
+            ),
+            totalPolicyDenials: options.results.reduce(
+                (sum, result) => sum + result.policyVerifier.denials,
+                0,
+            ),
             toolCallsByName: counts(calledTools),
             failureCategories: counts(failures),
         },

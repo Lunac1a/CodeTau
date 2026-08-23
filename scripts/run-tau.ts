@@ -13,6 +13,7 @@ import {
 } from "../packages/bench/tau/deterministic-model.ts";
 import { runTauEvaluation } from "../packages/bench/tau/runner.ts";
 import type { TauReproducibilityMetadata } from "../packages/bench/tau/report.ts";
+import { ModelTauPolicyVerifier } from "../packages/bench/tau/policy-verifier.ts";
 import { OpenAICompatibleModelProvider } from "../src/providers/openai-compatible.ts";
 
 type UpstreamLock = Readonly<{
@@ -86,6 +87,9 @@ const reproducibility: TauReproducibilityMetadata = {
         userBaseUrl: options.userMode === "official" ? options.userBaseUrl : null,
         modelMode: options.modelMode,
         modelBaseUrl: options.modelMode === "lmstudio" ? options.baseUrl : null,
+        policyVerifier: options.policyVerifier,
+        verifierModel: options.policyVerifier === "model" ? options.model : null,
+        verifierBaseUrl: options.policyVerifier === "model" ? options.baseUrl : null,
     },
 };
 
@@ -137,6 +141,17 @@ const output = await runTauEvaluation({
         return await new TauSessionAdapter({
             client: new TauBridgeClient(transport),
             model,
+            ...(options.policyVerifier === "model"
+                ? {
+                      policyVerifier: new ModelTauPolicyVerifier(
+                          new OpenAICompatibleModelProvider({
+                              baseUrl: options.baseUrl,
+                              model: options.model,
+                              apiKey: process.env.CODETAU_MODEL_API_KEY,
+                          }),
+                      ),
+                  }
+                : {}),
         }).run(run);
     },
 });
@@ -151,6 +166,8 @@ console.log(JSON.stringify({
     averageReward: output.report.overall.averageReward,
     averageDurationMs: output.report.overall.averageDurationMs,
     totalToolCalls: output.report.overall.totalToolCalls,
+    totalPolicyChecks: output.report.overall.totalPolicyChecks,
+    totalPolicyDenials: output.report.overall.totalPolicyDenials,
     failureCategories: output.report.overall.failureCategories,
 }, null, 2));
 

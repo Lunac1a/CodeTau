@@ -30,6 +30,40 @@ test("parses a strict tau agent turn", () => {
     }
 });
 
+test("preserves the upstream tool mutation classification", () => {
+    const message = parseBridgeLine(
+        JSON.stringify({
+            version: TAU_PROTOCOL_VERSION,
+            id: "run-1:init",
+            type: "agent_init",
+            payload: {
+                domainPolicy: "Follow policy.",
+                tools: [
+                    {
+                        name: "update_order",
+                        description: "Update an order",
+                        parameters: { type: "object" },
+                        toolType: "write",
+                        mutatesState: true,
+                    },
+                ],
+                messageHistory: [],
+            },
+        }),
+    );
+
+    assert.equal(message.type, "agent_init");
+    if (message.type === "agent_init") {
+        assert.deepEqual(message.payload.tools[0], {
+            name: "update_order",
+            description: "Update an order",
+            parameters: { type: "object" },
+            toolType: "write",
+            mutatesState: true,
+        });
+    }
+});
+
 test("rejects unknown tau bridge fields and message types", () => {
     assert.throws(
         () =>

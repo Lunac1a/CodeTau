@@ -68,12 +68,14 @@ validations are stored with their full logs for audit, while the model receives
 compact actual/expected diagnostics so small local models are not distracted by
 stack traces.
 
-Phase 5.1 through 5.3 now pin tau3-bench 1.0.1, define a strict Python JSONL
-bridge, and connect it to a TypeScript `TauSessionAdapter`. The adapter reuses
-the model-independent provider and message contracts while leaving the
+Phase 5 pins tau3-bench 1.0.1, defines a strict Python JSONL bridge, connects it
+to a TypeScript `TauSessionAdapter`, runs the official environment and user
+simulator, and writes comparable reports with per-run evidence. The adapter
+reuses the model-independent provider and message contracts while leaving the
 coding-specific workspace, approval, validation, and completion loop unchanged.
-Current acceptance uses a deterministic fake Python driver; no claim of a real
-tau benchmark run is made until the Phase 5.4 smoke succeeds.
+An opt-in Policy Verifier can now intercept tools that upstream marks as
+state-mutating; denied proposals remain visible in CodeTau evidence but never
+reach the official environment.
 
 ## Local model
 

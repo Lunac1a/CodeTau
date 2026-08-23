@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable, Literal
 
-PROTOCOL_VERSION = 2
+PROTOCOL_VERSION = 3
 MAX_LINE_LENGTH = 1_048_576
 
 Direction = Literal["host-to-bridge", "bridge-to-host"]
@@ -202,11 +202,21 @@ def _history_message(value: Any, name: str) -> dict[str, Any]:
 
 
 def _tool_definition(value: Any, name: str) -> dict[str, Any]:
-    item = _object(value, name, {"name", "description", "parameters"})
+    item = _object(
+        value,
+        name,
+        {"name", "description", "parameters", "toolType", "mutatesState"},
+    )
+    if item["toolType"] not in {"read", "write", "think", "generic"}:
+        raise ProtocolViolation(
+            "invalid_payload", f"{name}.toolType must be a supported tau tool type"
+        )
     return {
         "name": _text(item["name"], f"{name}.name"),
         "description": _text(item["description"], f"{name}.description"),
         "parameters": _object_or_json(item["parameters"], f"{name}.parameters"),
+        "toolType": item["toolType"],
+        "mutatesState": _boolean(item["mutatesState"], f"{name}.mutatesState"),
     }
 
 

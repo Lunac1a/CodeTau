@@ -1,10 +1,10 @@
-# CodeTau Tau Bridge Protocol v2
+# CodeTau Tau Bridge Protocol v3
 
-Protocol v2 is a bidirectional request/response protocol over UTF-8 JSON Lines.
+Protocol v3 is a bidirectional request/response protocol over UTF-8 JSON Lines.
 Each line is exactly one object:
 
 ```json
-{"version":2,"id":"run-1:turn:1","type":"agent_turn_result","payload":{}}
+{"version":3,"id":"run-1:turn:1","type":"agent_turn_result","payload":{}}
 ```
 
 The envelope accepts exactly four fields. IDs are 1-128 characters and use
@@ -45,7 +45,7 @@ domain. EOF before `shutdown_result` is a transport failure.
 ### `handshake`
 
 ```json
-{"client":{"name":"codetau","version":"0.1.0"},"protocolVersion":2}
+{"client":{"name":"codetau","version":"0.1.0"},"protocolVersion":3}
 ```
 
 `handshake_result` returns the bridge identity and the locked upstream display
@@ -63,8 +63,10 @@ non-negative integer.
 ### `agent_init`
 
 Contains `domainPolicy`, `tools`, and `messageHistory`. Every tool has `name`,
-`description`, and JSON Schema-compatible `parameters`. The host acknowledges
-initialization with an empty `agent_init_result` payload.
+`description`, JSON Schema-compatible `parameters`, the official upstream
+`toolType`, and the official `mutatesState` classification. CodeTau uses the
+classification supplied by tau rather than guessing from tool names. The host
+acknowledges initialization with an empty `agent_init_result` payload.
 
 ### `agent_turn`
 

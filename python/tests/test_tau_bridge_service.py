@@ -92,6 +92,8 @@ class FakeTauDriver:
                         "required": ["orderId"],
                         "additionalProperties": False,
                     },
+                    "toolType": "read",
+                    "mutatesState": False,
                 }
             ],
             message_history=[],

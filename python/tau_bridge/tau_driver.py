@@ -108,14 +108,18 @@ def _input_message(
     }
 
 
-def _tool_definitions(tools: list[Any]) -> list[dict[str, Any]]:
+def _tool_definitions(environment: Any) -> list[dict[str, Any]]:
     definitions: list[dict[str, Any]] = []
-    for tool in tools:
+    if environment.tools is None:
+        raise RuntimeError("tau environment has no assistant toolkit")
+    for tool in environment.get_tools():
         function = tool.openai_schema["function"]
         definitions.append({
             "name": function["name"],
             "description": function.get("description") or function["name"],
             "parameters": function["parameters"],
+            "toolType": environment.tools.tool_type(tool.name).value,
+            "mutatesState": environment.tools.tool_mutates_state(tool.name),
         })
     return definitions
 
@@ -192,7 +196,7 @@ class OfficialTauDriver:
         )
         return AgentInit(
             domain_policy=environment.get_policy(),
-            tools=_tool_definitions(environment.get_tools()),
+            tools=_tool_definitions(environment),
             message_history=[],
         )
 

@@ -29,7 +29,7 @@ evaluation, the official `base` task split, and the `mock` domain. Voice,
 `banking_knowledge`, Gym/RL, leaderboard submission, and broad domain runs are
 out of scope until the minimal integration is proven.
 
-## JSONL protocol v2 boundary
+## JSONL protocol v3 boundary
 
 The TypeScript adapter owns CodeTau sessions, model calls, event persistence,
 and report collection. The Python process owns the pinned tau runtime, domain,
@@ -39,14 +39,15 @@ The TypeScript adapter starts the Python bridge and communicates over UTF-8
 JSON Lines on stdin/stdout:
 
 - Every line is one JSON object with exactly `version`, `id`, `type`, and
-  `payload` fields. `version` is `2`; `id` correlates a request and response.
+  `payload` fields. `version` is `3`; `id` correlates a request and response.
 - Stdout is protocol-only. Human diagnostics and upstream logs go to stderr.
 - TypeScript sends `handshake`, `run_start`, `agent_init_result`,
   `agent_turn_result`, and `shutdown` messages.
 - Python sends `handshake_result`, `agent_init`, `agent_turn`, `run_result`,
   `error`, and `shutdown_result` messages.
 - `agent_init` carries the official domain policy, tool descriptions/schemas,
-  and initial message history.
+  upstream tool type and state-mutation classification, and initial message
+  history.
 - `agent_turn` carries one official half-duplex input (`UserMessage`,
   `ToolMessage`, or `MultiToolMessage`). Its matching `agent_turn_result`
   carries CodeTau's assistant text and/or tool calls in an upstream-neutral
@@ -88,11 +89,14 @@ counts. Reproducibility metadata records the CodeTau version and Git state,
 official release and commit, `uv.lock` SHA-256, Python and uv versions, protocol
 version, evaluator, user mode, and model mode.
 
-Report v4 keeps that summary compact and links every completed run to an
+Report v5 keeps that summary compact and links every completed run to an
 `evidence/*.json` artifact. Each artifact contains official reward diagnostics,
 termination reason, the domain policy and tool names, and the ordered
-user/tool/assistant trajectory recorded by CodeTau. Evidence is observational;
-it does not alter the official environment or reward.
+user/tool/assistant trajectory recorded by CodeTau. When the optional policy
+verifier is enabled, the artifact also records each proposed mutating call and
+its allow/deny verdict, while the report summarizes verifier checks and
+denials. Evidence is observational; it does not alter the official environment
+or reward.
 
 ## Repeated runs and local-model evaluation
 
@@ -125,6 +129,13 @@ pnpm tau:run -- --domain airline --model-mode lmstudio `
   --user-base-url http://localhost:1234/v1 `
   --evaluation all --task 0 --runs 1 --seed 42
 ```
+
+Add `--policy-verifier model` to place an independent, fail-closed model check
+in front of tools that the official tau runtime marks as state-mutating. The
+verifier must return one structured verdict and an allow verdict must include
+an exact contiguous policy quote. Denied calls are retained in CodeTau evidence
+but are never sent to the official environment. The default is `off`, so
+reports state explicitly whether this experimental boundary was active.
 
 `--user-model` uses LiteLLM model naming; an OpenAI-compatible local model uses
 the `openai/` prefix. `--user-base-url` is passed as LiteLLM's `api_base`.

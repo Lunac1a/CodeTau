@@ -31,6 +31,7 @@ const evidence = {
         toolNames: ["create_task"],
         messageHistory: [],
         trajectory: [],
+        policyChecks: [],
     },
 } as const;
 
@@ -55,7 +56,7 @@ const reproducibility: TauReproducibilityMetadata = {
         uvLockSha256: "c".repeat(64),
     },
     runtime: { python: "Python 3.12.10", uv: "uv 0.12.5" },
-    protocolVersion: 2,
+    protocolVersion: 3,
     evaluation: {
         modality: "text",
         communication: "half-duplex",
@@ -65,6 +66,9 @@ const reproducibility: TauReproducibilityMetadata = {
         userBaseUrl: null,
         modelMode: "deterministic-model",
         modelBaseUrl: null,
+        policyVerifier: "off",
+        verifierModel: null,
+        verifierBaseUrl: null,
     },
 };
 
@@ -74,7 +78,7 @@ test("builds a tau report with unified success, timing, tool, and failure metric
         status: "completed",
         metadata: {
             upstreamCommit: "b".repeat(40),
-            protocolVersion: 2,
+            protocolVersion: 3,
             ...run,
         },
         modelTurns: 2,
@@ -82,6 +86,12 @@ test("builds a tau report with unified success, timing, tool, and failure metric
         toolCallsByName: { create_task: 1 },
         durationMs: 200,
         usage: { inputTokens: 10, outputTokens: 5 },
+        policyVerifier: {
+            checks: 0,
+            allows: 0,
+            denials: 0,
+            usage: { inputTokens: 0, outputTokens: 0 },
+        },
         evidence,
     });
     const failed = failedTauRun(
@@ -99,13 +109,14 @@ test("builds a tau report with unified success, timing, tool, and failure metric
     });
 
     assert.equal(report.overall.runs, 2);
-    assert.equal(report.version, 4);
+    assert.equal(report.version, 5);
     assert.equal(report.overall.successes, 1);
     assert.equal(report.overall.successRate, 0.5);
     assert.equal(report.overall.averageReward, 0.5);
     assert.equal(report.overall.averageDurationMs, 300);
     assert.equal(report.overall.averageToolCalls, 0.5);
     assert.equal(report.overall.totalModelTurns, 2);
+    assert.equal(report.overall.totalPolicyChecks, 0);
     assert.deepEqual(report.overall.toolCallsByName, { create_task: 1 });
     assert.deepEqual(report.overall.failureCategories, { timeout: 1 });
     assert.equal(report.results[1]?.error?.code, "response_timeout");
@@ -133,7 +144,7 @@ test("writes a reproducible tau report artifact", async () => {
             status: "completed",
             metadata: {
                 upstreamCommit: "b".repeat(40),
-                protocolVersion: 2,
+                protocolVersion: 3,
                 ...run,
             },
             modelTurns: 1,
@@ -141,6 +152,12 @@ test("writes a reproducible tau report artifact", async () => {
             toolCallsByName: {},
             durationMs: 10,
             usage: { inputTokens: 0, outputTokens: 0 },
+            policyVerifier: {
+                checks: 0,
+                allows: 0,
+                denials: 0,
+                usage: { inputTokens: 0, outputTokens: 0 },
+            },
             evidence,
         });
         const evidenceArtifact = buildTauEvidenceArtifact(run, evidence);
@@ -182,7 +199,7 @@ test("refuses to write a report with missing diagnostic evidence", async () => {
         status: "completed",
         metadata: {
             upstreamCommit: "b".repeat(40),
-            protocolVersion: 2,
+            protocolVersion: 3,
             ...run,
         },
         modelTurns: 1,
@@ -190,6 +207,12 @@ test("refuses to write a report with missing diagnostic evidence", async () => {
         toolCallsByName: {},
         durationMs: 10,
         usage: { inputTokens: 0, outputTokens: 0 },
+        policyVerifier: {
+            checks: 0,
+            allows: 0,
+            denials: 0,
+            usage: { inputTokens: 0, outputTokens: 0 },
+        },
         evidence,
     });
     const report = buildTauReport({

@@ -20,7 +20,7 @@ const reproducibility: TauReproducibilityMetadata = {
         uvLockSha256: "d".repeat(64),
     },
     runtime: { python: "Python 3.12.10", uv: "uv 0.12.5" },
-    protocolVersion: 2,
+    protocolVersion: 3,
     evaluation: {
         modality: "text",
         communication: "half-duplex",
@@ -30,6 +30,9 @@ const reproducibility: TauReproducibilityMetadata = {
         userBaseUrl: null,
         modelMode: "fake",
         modelBaseUrl: null,
+        policyVerifier: "off",
+        verifierModel: null,
+        verifierBaseUrl: null,
     },
 };
 
@@ -44,6 +47,7 @@ const evidence = {
         toolNames: ["tool"],
         messageHistory: [],
         trajectory: [],
+        policyChecks: [],
     },
 } as const;
 
@@ -67,12 +71,18 @@ test("runs multiple tau tasks and trials with stable distinct seeds", async () =
                 return {
                     reward: 1,
                     status: "completed",
-                    metadata: { upstreamCommit: "c".repeat(40), protocolVersion: 2, ...run },
+                    metadata: { upstreamCommit: "c".repeat(40), protocolVersion: 3, ...run },
                     modelTurns: 2,
                     toolCalls: 1,
                     toolCallsByName: { tool: 1 },
                     durationMs: 25,
                     usage: { inputTokens: 5, outputTokens: 2 },
+                    policyVerifier: {
+                        checks: 0,
+                        allows: 0,
+                        denials: 0,
+                        usage: { inputTokens: 0, outputTokens: 0 },
+                    },
                     evidence,
                 };
             },

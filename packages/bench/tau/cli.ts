@@ -2,6 +2,7 @@ export type TauModelMode = "deterministic" | "lmstudio";
 export type TauDomain = "mock" | "airline";
 export type TauUserMode = "scripted" | "official";
 export type TauEvaluationMode = "env" | "all";
+export type TauPolicyVerifierMode = "off" | "model";
 
 export type TauCliOptions = Readonly<{
     taskIds: readonly string[];
@@ -11,6 +12,7 @@ export type TauCliOptions = Readonly<{
     domain: TauDomain;
     userMode: TauUserMode;
     evaluation: TauEvaluationMode;
+    policyVerifier: TauPolicyVerifierMode;
     model: string;
     baseUrl: string;
     userModel: string;
@@ -43,6 +45,7 @@ export function parseTauCliArgs(rawArgs: readonly string[]): TauCliOptions {
     let domain: TauDomain = "mock";
     let userMode: TauUserMode = "scripted";
     let evaluation: TauEvaluationMode = "env";
+    let policyVerifier: TauPolicyVerifierMode = "off";
     let model = process.env.CODETAU_MODEL ?? "qwen2.5-7b-instruct";
     let baseUrl = process.env.CODETAU_MODEL_BASE_URL ?? "http://localhost:1234/v1";
     let userModel = process.env.CODETAU_TAU_USER_MODEL ?? "";
@@ -91,6 +94,13 @@ export function parseTauCliArgs(rawArgs: readonly string[]): TauCliOptions {
             }
             evaluation = selectedEvaluation;
             index += 1;
+        } else if (option === "--policy-verifier") {
+            const selectedVerifier = value(args, index, option);
+            if (selectedVerifier !== "off" && selectedVerifier !== "model") {
+                throw new Error("--policy-verifier must be off or model");
+            }
+            policyVerifier = selectedVerifier;
+            index += 1;
         } else if (option === "--model") {
             model = value(args, index, option);
             index += 1;
@@ -130,6 +140,9 @@ export function parseTauCliArgs(rawArgs: readonly string[]): TauCliOptions {
     if (modelMode === "deterministic" && (domain !== "mock" || userMode !== "scripted")) {
         throw new Error("Deterministic mode supports only mock with scripted user mode");
     }
+    if (policyVerifier === "model" && modelMode !== "lmstudio") {
+        throw new Error("Model policy verifier requires LM Studio model mode");
+    }
     return {
         taskIds: selectedTasks,
         runsPerTask,
@@ -138,6 +151,7 @@ export function parseTauCliArgs(rawArgs: readonly string[]): TauCliOptions {
         domain,
         userMode,
         evaluation,
+        policyVerifier,
         model,
         baseUrl,
         userModel,

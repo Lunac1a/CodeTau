@@ -11,6 +11,11 @@ import type {
     TauToolCall,
     TauToolDefinition,
 } from "./protocol.ts";
+import type {
+    TauPolicyVerification,
+    TauPolicyVerifier,
+    TauPolicyVerdict,
+} from "./policy-verifier.ts";
 
 export type TauTraceEvent = Readonly<
     | {
@@ -33,6 +38,11 @@ export type TauRunEvidence = Readonly<{
         toolNames: readonly string[];
         messageHistory: readonly TauHistoryMessage[];
         trajectory: readonly TauTraceEvent[];
+        policyChecks: readonly Readonly<{
+            sequence: number;
+            proposedCalls: readonly TauToolCall[];
+            verdict: TauPolicyVerdict;
+        }>[];
     }>;
 }>;
 
@@ -55,12 +65,19 @@ export type TauSessionResult = Readonly<{
     toolCallsByName: Readonly<Record<string, number>>;
     durationMs: number;
     usage: ModelUsage;
+    policyVerifier: Readonly<{
+        checks: number;
+        allows: number;
+        denials: number;
+        usage: ModelUsage;
+    }>;
     evidence: TauRunEvidence;
 }>;
 
 export type TauSessionAdapterOptions = Readonly<{
     client: TauBridgeClient;
     model: ModelProvider;
+    policyVerifier?: TauPolicyVerifier;
     now?: () => number;
 }>;
 
@@ -200,11 +217,13 @@ function assistantFromResponse(
 export class TauSessionAdapter {
     readonly #client: TauBridgeClient;
     readonly #model: ModelProvider;
+    readonly #policyVerifier?: TauPolicyVerifier;
     readonly #now: () => number;
 
     constructor(options: TauSessionAdapterOptions) {
         this.#client = options.client;
         this.#model = options.model;
+        this.#policyVerifier = options.policyVerifier;
         this.#now = options.now ?? Date.now;
     }
 
@@ -214,8 +233,18 @@ export class TauSessionAdapter {
         let inputTokens = 0;
         let outputTokens = 0;
         let toolCalls = 0;
+        let verifierChecks = 0;
+        let verifierAllows = 0;
+        let verifierDenials = 0;
+        let verifierInputTokens = 0;
+        let verifierOutputTokens = 0;
         const toolCallsByName: Record<string, number> = {};
         const trajectory: TauTraceEvent[] = [];
+        const policyChecks: Array<{
+            sequence: number;
+            proposedCalls: readonly TauToolCall[];
+            verdict: TauPolicyVerdict;
+        }> = [];
         let sequence = 0;
         const startedAt = this.#now();
         try {
@@ -233,6 +262,11 @@ export class TauSessionAdapter {
                 appendHistory(messages, history);
             }
             const availableTools = initialization.payload.tools.map(toolDefinition);
+            const mutatingToolNames = new Set(
+                initialization.payload.tools
+                    .filter((tool) => tool.mutatesState)
+                    .map((tool) => tool.name),
+            );
             let event = await this.#client.acknowledgeInitialization(
                 initialization.id,
             );
@@ -243,24 +277,89 @@ export class TauSessionAdapter {
                     message: structuredClone(event.payload.message),
                 });
                 appendInput(messages, event.payload.message);
-                let response: Awaited<ReturnType<ModelProvider["generate"]>>;
-                try {
-                    response = await this.#model.generate({
-                        messages: structuredClone(messages),
-                        availableTools,
-                        includeFinishTool: false,
-                    });
-                } catch (error) {
-                    throw new TauAdapterError(
-                        "model_provider_error",
-                        "Model provider failed during a tau turn",
-                        { cause: error },
+                let assistant: ReturnType<typeof assistantFromResponse>;
+                let deniedAttempts = 0;
+                while (true) {
+                    let response: Awaited<ReturnType<ModelProvider["generate"]>>;
+                    try {
+                        response = await this.#model.generate({
+                            messages: structuredClone(messages),
+                            availableTools,
+                            includeFinishTool: false,
+                        });
+                    } catch (error) {
+                        throw new TauAdapterError(
+                            "model_provider_error",
+                            "Model provider failed during a tau turn",
+                            { cause: error },
+                        );
+                    }
+                    modelTurns += 1;
+                    inputTokens += response.usage.inputTokens;
+                    outputTokens += response.usage.outputTokens;
+                    assistant = assistantFromResponse(response);
+                    const proposedCalls = assistant.protocol.toolCalls.filter((call) =>
+                        mutatingToolNames.has(call.name),
                     );
+                    if (this.#policyVerifier === undefined || proposedCalls.length === 0) {
+                        break;
+                    }
+                    let verification: TauPolicyVerification;
+                    try {
+                        verification = await this.#policyVerifier.verify({
+                            domainPolicy: initialization.payload.domainPolicy,
+                            conversation: structuredClone(messages),
+                            proposedCalls: structuredClone(proposedCalls),
+                        });
+                    } catch {
+                        verification = {
+                            verdict: {
+                                decision: "deny",
+                                reason: "Policy verifier failed closed",
+                                policyQuote: null,
+                            },
+                            usage: { inputTokens: 0, outputTokens: 0 },
+                        };
+                    }
+                    verifierChecks += 1;
+                    verifierInputTokens += verification.usage.inputTokens;
+                    verifierOutputTokens += verification.usage.outputTokens;
+                    if (verification.verdict.decision === "allow") {
+                        verifierAllows += 1;
+                    } else {
+                        verifierDenials += 1;
+                    }
+                    policyChecks.push({
+                        sequence: policyChecks.length + 1,
+                        proposedCalls: structuredClone(proposedCalls),
+                        verdict: structuredClone(verification.verdict),
+                    });
+                    if (verification.verdict.decision === "allow") {
+                        break;
+                    }
+                    messages.push(assistant.model);
+                    for (const call of assistant.protocol.toolCalls) {
+                        messages.push({
+                            role: "tool",
+                            toolCallId: call.id,
+                            content: JSON.stringify({
+                                error: true,
+                                code: "policy_verifier_denied",
+                                message: verification.verdict.reason,
+                            }),
+                        });
+                    }
+                    deniedAttempts += 1;
+                    if (deniedAttempts >= 2) {
+                        const text =
+                            "I cannot perform the proposed action because its authorization under the official policy could not be established.";
+                        assistant = {
+                            protocol: { role: "assistant", content: text, toolCalls: [] },
+                            model: { role: "assistant", content: text },
+                        };
+                        break;
+                    }
                 }
-                modelTurns += 1;
-                inputTokens += response.usage.inputTokens;
-                outputTokens += response.usage.outputTokens;
-                const assistant = assistantFromResponse(response);
                 for (const call of assistant.protocol.toolCalls) {
                     toolCalls += 1;
                     toolCallsByName[call.name] = (toolCallsByName[call.name] ?? 0) + 1;
@@ -287,6 +386,15 @@ export class TauSessionAdapter {
                 toolCallsByName,
                 durationMs: this.#now() - startedAt,
                 usage: { inputTokens, outputTokens },
+                policyVerifier: {
+                    checks: verifierChecks,
+                    allows: verifierAllows,
+                    denials: verifierDenials,
+                    usage: {
+                        inputTokens: verifierInputTokens,
+                        outputTokens: verifierOutputTokens,
+                    },
+                },
                 evidence: {
                     schemaVersion: 1,
                     official: structuredClone(event.payload.diagnostics),
@@ -297,6 +405,7 @@ export class TauSessionAdapter {
                             initialization.payload.messageHistory,
                         ),
                         trajectory,
+                        policyChecks,
                     },
                 },
             };

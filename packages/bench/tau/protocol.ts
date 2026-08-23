@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 
-export const TAU_PROTOCOL_VERSION = 2;
+export const TAU_PROTOCOL_VERSION = 3;
 export const TAU_MAX_LINE_BYTES = 1_048_576;
 
 const idPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
@@ -19,6 +19,8 @@ export type TauToolDefinition = Readonly<{
     name: string;
     description: string;
     parameters: Readonly<Record<string, unknown>>;
+    toolType: "read" | "write" | "think" | "generic";
+    mutatesState: boolean;
 }>;
 
 export type TauToolCall = Readonly<{
@@ -76,7 +78,7 @@ export type TauRunDiagnostics = Readonly<{
 }>;
 
 type Envelope<Type extends string, Payload> = Readonly<{
-    version: 2;
+    version: 3;
     id: string;
     type: Type;
     payload: Payload;
@@ -130,7 +132,7 @@ export type HostMessage =
           "handshake",
           Readonly<{
               client: Readonly<{ name: string; version: string }>;
-              protocolVersion: 2;
+              protocolVersion: 3;
           }>
       >
     | Envelope<
@@ -333,11 +335,33 @@ function inputMessage(value: unknown, name: string): TauInputMessage {
 }
 
 function toolDefinition(value: unknown, name: string): TauToolDefinition {
-    const item = exact(value, name, ["name", "description", "parameters"]);
+    const item = exact(value, name, [
+        "name",
+        "description",
+        "parameters",
+        "toolType",
+        "mutatesState",
+    ]);
+    if (
+        item.toolType !== "read" &&
+        item.toolType !== "write" &&
+        item.toolType !== "think" &&
+        item.toolType !== "generic"
+    ) {
+        throw new TauProtocolError("invalid_payload", `${name}.toolType is invalid`);
+    }
+    if (typeof item.mutatesState !== "boolean") {
+        throw new TauProtocolError(
+            "invalid_payload",
+            `${name}.mutatesState must be boolean`,
+        );
+    }
     return {
         name: text(item.name, `${name}.name`),
         description: text(item.description, `${name}.description`),
         parameters: objectValue(item.parameters, `${name}.parameters`),
+        toolType: item.toolType,
+        mutatesState: item.mutatesState,
     };
 }
 

@@ -86,6 +86,8 @@ TypeScript boundaries under `packages/bench/tau/` are:
   timeouts, diagnostics, and exit handling.
 - `adapter.ts` maps tau policies, messages, and dynamic tool definitions onto
   CodeTau's existing model-provider request/response types.
+- `policy-verifier.ts` optionally checks upstream-classified mutating calls
+  against the official policy before they can reach the environment.
 - `report.ts` records reproducibility metadata and unified run/task/overall
   metrics.
 - `runner.ts` repeats selected tasks with stable seeds and isolated Python
@@ -122,10 +124,11 @@ supported; `--model` and `--base-url` override the first two. Reports are stored
 under `.codetau/tau/<benchmark-id>/report.json`. Each task summary includes
 success rate and observed `pass@k`.
 
-Report v4 links each completed run to an `evidence/*.json` artifact containing
+Report v5 links each completed run to an `evidence/*.json` artifact containing
 the official reward breakdown and termination reason plus CodeTau's ordered
 interaction trajectory. This keeps the summary compact while preserving the
-exact evidence needed to diagnose a failed run.
+exact evidence needed to diagnose a failed run. Policy-verifier checks and
+denials are recorded separately from official executed tool calls.
 
 The deterministic acceptance mode is deliberately limited to pinned `mock/base`
 and uses a scripted user. Those results validate CodeTau's provider integration
@@ -144,6 +147,13 @@ pnpm tau:run -- --domain airline --model-mode lmstudio `
   --user-base-url http://localhost:1234/v1 `
   --evaluation all --task 0 --runs 1 --seed 42
 ```
+
+To evaluate the opt-in Policy Verifier, append `--policy-verifier model`. It
+checks only tools that the pinned upstream runtime identifies as mutating,
+fails closed on malformed verifier output, and withholds denied calls from Tau.
+The verifier is a safety boundary, not a guarantee that a small model will
+interpret every policy correctly; comparable reports therefore include its
+mode and model metadata.
 
 The Agent model is called through CodeTau's OpenAI-compatible provider. The
 official Python `UserSimulator` is called through upstream LiteLLM. Both may use

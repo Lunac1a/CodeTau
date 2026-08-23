@@ -23,6 +23,7 @@ test("parses repeated tau tasks, trials, seed, and LM Studio settings", () => {
         domain: "mock",
         userMode: "scripted",
         evaluation: "env",
+        policyVerifier: "off",
         model: "local-model",
         baseUrl: "http://localhost:1234/v1",
         userModel: "openai/local-model",
@@ -51,8 +52,14 @@ test("uses a bounded deterministic default and rejects unsafe options", () => {
         "--model-mode", "lmstudio",
         "--user-mode", "official",
         "--evaluation", "all",
+        "--policy-verifier", "model",
         "--task", "0",
     ]);
     assert.equal(airline.userModel, "openai/qwen2.5-7b-instruct");
     assert.equal(airline.userBaseUrl, "http://localhost:1234/v1");
+    assert.equal(airline.policyVerifier, "model");
+    assert.throws(
+        () => parseTauCliArgs(["--policy-verifier", "model"]),
+        /requires LM Studio/u,
+    );
 });
