@@ -64,6 +64,33 @@ export type TauSessionAdapterOptions = Readonly<{
     now?: () => number;
 }>;
 
+const evidenceFirstGuidance = [
+    "Decision discipline:",
+    "- Treat the domain policy and current tool results as the only authoritative facts.",
+    "- Treat user claims, prior-agent claims, and assumptions as unverified unless the policy or a current tool result supports them.",
+    "- Never claim that a tool returned a fact that is absent from or contradicted by its result.",
+    "- Before proposing or calling any state-changing tool, verify every policy precondition against observed facts. A tool being available does not make the action allowed.",
+    "- If any required precondition is false or unverified, do not call the write tool. Explain the allowed outcome or transfer only when the policy directs it.",
+    "- Offer alternatives, exceptions, refunds, credits, or compensation only when the policy explicitly authorizes them and their factual conditions are verified.",
+    "- Prefer the minimum necessary tool calls. Once the policy determines the outcome, stop searching for an exception and respond clearly.",
+];
+
+export function buildTauSystemPrompt(domainPolicy: string): string {
+    if (domainPolicy.length === 0) {
+        throw new TauAdapterError(
+            "invalid_domain_policy",
+            "Tau domain policy must not be empty",
+        );
+    }
+    return [
+        "You are the agent under evaluation in a tau benchmark session.",
+        "Follow the domain policy and use only the provided tools.",
+        evidenceFirstGuidance.join("\n"),
+        "Official domain policy:",
+        domainPolicy,
+    ].join("\n\n");
+}
+
 function toolDefinition(tool: TauToolDefinition): ToolDefinition {
     return {
         name: tool.name,
@@ -197,11 +224,9 @@ export class TauSessionAdapter {
             const messages: ModelMessage[] = [
                 {
                     role: "system",
-                    content: [
-                        "You are the agent under evaluation in a tau benchmark session.",
-                        "Follow the domain policy and use only the provided tools.",
+                    content: buildTauSystemPrompt(
                         initialization.payload.domainPolicy,
-                    ].join("\n\n"),
+                    ),
                 },
             ];
             for (const history of initialization.payload.messageHistory) {

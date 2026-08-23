@@ -98,6 +98,12 @@ assistant text or tau tool calls. The checked-in `--fake` Python driver provides
 deterministic cross-process acceptance coverage. The pinned real driver executes
 the official environment, tools, orchestrator, and ENV evaluator.
 
+The Tau adapter adds domain-neutral evidence-first decision guidance before the
+unaltered official policy. Tool results and policy text remain authoritative;
+user assertions are unverified until supported, and a state-changing tool may
+be called only after every policy precondition is established. The guidance
+does not mention benchmark task IDs or encode expected task outcomes.
+
 Run the bounded deterministic acceptance set twice per task:
 
 ```powershell

@@ -2,12 +2,35 @@ import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import test from "node:test";
 
-import { TauSessionAdapter } from "../packages/bench/tau/adapter.ts";
+import {
+    buildTauSystemPrompt,
+    TauAdapterError,
+    TauSessionAdapter,
+} from "../packages/bench/tau/adapter.ts";
 import {
     ProcessTauBridgeTransport,
     TauBridgeClient,
 } from "../packages/bench/tau/client.ts";
 import { FakeModelProvider } from "./fakes/fake-model.ts";
+
+test("builds a domain-neutral evidence-first tau system prompt", () => {
+    const prompt = buildTauSystemPrompt("Follow the mock order tool policy.");
+
+    assert.match(prompt, /only authoritative facts/u);
+    assert.match(prompt, /A tool being available does not make the action allowed/u);
+    assert.match(prompt, /state-changing tool/u);
+    assert.match(prompt, /minimum necessary tool calls/u);
+    assert.match(prompt, /Follow the mock order tool policy/u);
+    assert.doesNotMatch(prompt, /EHGLP3|send_certificate/u);
+    assert.throws(
+        () => buildTauSystemPrompt(""),
+        (error: unknown) => {
+            assert.ok(error instanceof TauAdapterError);
+            assert.equal(error.code, "invalid_domain_policy");
+            return true;
+        },
+    );
+});
 
 test("runs CodeTau model turns through the fake Python tau bridge", async () => {
     const ids = ["hello", "run-1", "stop"];
@@ -80,6 +103,10 @@ test("runs CodeTau model turns through the fake Python tau bridge", async () => 
         ["lookup_order"],
     );
     assert.match(model.requests[0]?.messages[0]?.content ?? "", /mock order tool/u);
+    assert.match(
+        model.requests[0]?.messages[0]?.content ?? "",
+        /only authoritative facts/u,
+    );
     assert.deepEqual(model.requests[1]?.messages.at(-1), {
         role: "tool",
         toolCallId: "call-1",
