@@ -7,6 +7,7 @@ import test from "node:test";
 import type { CodeTauConfig } from "../src/config/loader.ts";
 import { InMemoryEventStore } from "../src/persistence/in-memory-event-store.ts";
 import { SessionRunner } from "../src/session/runner.ts";
+import { buildNaturalLanguageTask } from "../src/natural-language/task-builder.ts";
 import { FakeModelProvider } from "./fakes/fake-model.ts";
 
 function configFor(directory: string): CodeTauConfig {
@@ -19,6 +20,12 @@ function configFor(directory: string): CodeTauConfig {
         maxOutputBytes: 10_000,
         sourcePath: join(directory, "codetau.config.json"),
         rootDirectory: directory,
+        naturalLanguage: {
+            maxModelTurns: 20,
+            maxToolCalls: 60,
+            maxRetries: 3,
+            additionalProtectedPaths: [],
+        },
     };
 }
 
@@ -101,7 +108,7 @@ test("assembles the real tool registry around the configured workspace", async (
         assert.equal(state.status, "blocked");
         assert.deepEqual(
             model.requests[0].availableTools.map((tool) => tool.name),
-            ["apply_patch", "list_files", "read_file", "run_validation"],
+            ["apply_patch", "create_file", "list_files", "read_file", "run_validation"],
         );
         assert.match(model.requests[1].messages.at(-1)?.content ?? "", /before/);
     } finally {
@@ -154,6 +161,85 @@ test("resumes a persisted approval using the Spec path stored in the Session", a
 
         assert.equal(resumed.status, "blocked");
         assert.equal(await readFile(join(directory, "workspace", "src", "value.txt"), "utf8"), "after");
+    } finally {
+        await store.close();
+        await rm(directory, { recursive: true, force: true });
+    }
+});
+
+test("resumes a generated Spec from its persisted snapshot", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "codetau-generated-resume-"));
+    const store = new InMemoryEventStore();
+    try {
+        await mkdir(join(directory, "src"), { recursive: true });
+        const model = new FakeModelProvider([
+            {
+                kind: "tool_calls",
+                calls: [
+                    {
+                        id: "create-1",
+                        name: "create_file",
+                        input: { path: "src/generated.ts", content: "export {};\n" },
+                    },
+                ],
+                usage: { inputTokens: 10, outputTokens: 5 },
+            },
+            {
+                kind: "tool_calls",
+                calls: [
+                    {
+                        id: "validation-1",
+                        name: "run_validation",
+                        input: { commandIndex: 0 },
+                    },
+                ],
+                usage: { inputTokens: 12, outputTokens: 4 },
+            },
+        ]);
+        const runner = new SessionRunner({
+            config: configFor(directory),
+            eventStore: store,
+            model,
+        });
+        const spec = await buildNaturalLanguageTask({
+            task: "Create a generated module.",
+            sessionId: "generated-resume",
+            validationCommands: [
+                { executable: process.execPath, args: ["-e", "process.exit(0)"] },
+            ],
+            config: configFor(directory),
+        });
+        const pending = await runner.runLoadedSpec({
+            spec,
+            sessionId: "generated-resume",
+        });
+        assert.equal(pending.status, "awaiting_approval");
+
+        const restartedRunner = new SessionRunner({
+            config: configFor(directory),
+            eventStore: store,
+            model,
+        });
+        const validationPending = await restartedRunner.resume({
+            sessionId: "generated-resume",
+            approvalResponse: "allow-once",
+        });
+        assert.equal(validationPending.status, "awaiting_approval");
+        assert.equal(validationPending.pendingApproval?.toolName, "run_validation");
+        const completed = await restartedRunner.resume({
+            sessionId: "generated-resume",
+            approvalResponse: "allow-once",
+        });
+        assert.equal(completed.status, "completed");
+        assert.equal(
+            await readFile(join(directory, "src", "generated.ts"), "utf8"),
+            "export {};\n",
+        );
+        const started = (await store.loadSession("generated-resume"))[0];
+        assert.equal(started?.type, "session_started");
+        if (started?.type === "session_started") {
+            assert.equal(started.specOrigin, "generated");
+        }
     } finally {
         await store.close();
         await rm(directory, { recursive: true, force: true });

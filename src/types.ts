@@ -68,6 +68,7 @@ export type AgentEvent =
         readonly specPath: string;
         readonly specDigest: string;
         readonly specSnapshot: SpecSnapshot;
+        readonly specOrigin?: "file" | "generated";
       })
     | (EventBase & {
         readonly type: "state_changed";
@@ -79,6 +80,7 @@ export type AgentEvent =
     | (EventBase & {
         readonly type: "model_tool_call";
         readonly toolCall: ToolCall;
+        readonly usage?: ModelUsage;
       })
     | (EventBase & {
         readonly type: "model_text";

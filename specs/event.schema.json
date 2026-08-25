@@ -58,6 +58,7 @@
             "specId": { "type": "string", "minLength": 1 },
             "specPath": { "type": "string", "minLength": 1 },
             "specDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "specOrigin": { "enum": ["file", "generated"] },
             "specSnapshot": {
               "type": "object",
               "additionalProperties": false,
@@ -101,7 +102,8 @@
           "required": ["toolCall"],
           "properties": {
             "type": { "const": "model_tool_call" },
-            "toolCall": { "$ref": "#/$defs/toolCall" }
+            "toolCall": { "$ref": "#/$defs/toolCall" },
+            "usage": { "$ref": "#/$defs/usage" }
           }
         }
       ],

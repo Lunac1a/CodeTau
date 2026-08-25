@@ -4,6 +4,7 @@ export type WorkspaceSandboxErrorCode =
     | "workspace_path_invalid"
     | "workspace_path_outside"
     | "workspace_path_not_allowed"
+    | "workspace_parent_invalid"
     | "workspace_path_not_found"
     | "workspace_path_unavailable";
 

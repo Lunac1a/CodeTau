@@ -4,5 +4,11 @@
   "baseUrl": "http://localhost:1234/v1",
   "commandAllowlist": ["node", "node.exe", "npm", "npm.cmd", "pnpm", "pnpm.cmd", "python", "python.exe", "pytest", "pytest.exe"],
   "commandTimeoutMs": 30000,
-  "maxOutputBytes": 100000
+  "maxOutputBytes": 100000,
+  "naturalLanguage": {
+    "maxModelTurns": 20,
+    "maxToolCalls": 60,
+    "maxRetries": 3,
+    "additionalProtectedPaths": []
+  }
 }

@@ -63,6 +63,12 @@ function config(databasePath: string): CodeTauConfig {
         maxOutputBytes: 1_000,
         sourcePath: join(rootDirectory, "codetau.config.json"),
         rootDirectory,
+        naturalLanguage: {
+            maxModelTurns: 20,
+            maxToolCalls: 60,
+            maxRetries: 3,
+            additionalProtectedPaths: [],
+        },
     };
 }
 
@@ -149,6 +155,9 @@ test("routes run commands through the Session Runner", async () => {
                         toolName: "apply_patch",
                     },
                 };
+            },
+            async runLoadedSpec() {
+                throw new Error("runLoadedSpec should not be called");
             },
             async resume() {
                 throw new Error("resume should not be called");

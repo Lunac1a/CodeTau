@@ -2,6 +2,13 @@ import type { ApprovalResponse } from "../../src/spec/types.ts";
 
 export type CliCommand =
     | {
+          readonly kind: "ask";
+          readonly task?: string;
+          readonly sessionId?: string;
+          readonly yes: boolean;
+          readonly validationCommands: readonly string[];
+      }
+    | {
           readonly kind: "status";
           readonly sessionId: string;
       }
@@ -18,6 +25,8 @@ export type CliCommand =
 
 export const usage = [
     "Usage:",
+    "  codetau",
+    "  codetau ask <task> [--session <session-id>] [--yes] [--validate <command>]...",
     "  codetau run <spec-path> [--session <session-id>]",
     "  codetau resume <session-id> [--approval <allow-once|allow-session|deny>]",
     "  codetau status <session-id>",
@@ -34,6 +43,50 @@ function isApprovalResponse(value: string): value is ApprovalResponse {
 export function parseCliArgs(argv: readonly string[]): CliCommand {
     const normalizedArgv = argv[0] === "--" ? argv.slice(1) : argv;
     const [command, firstArgument, ...remaining] = normalizedArgv;
+
+    if (command === undefined) {
+        return {
+            kind: "ask",
+            yes: false,
+            validationCommands: [],
+        };
+    }
+
+    if (command === "ask" && requiredValue(firstArgument)) {
+        let sessionId: string | undefined;
+        let yes = false;
+        const validationCommands: string[] = [];
+        for (let index = 0; index < remaining.length; index += 1) {
+            const argument = remaining[index];
+            if (argument === "--yes" && !yes) {
+                yes = true;
+                continue;
+            }
+            const value = remaining[index + 1];
+            if (
+                argument === "--session" &&
+                sessionId === undefined &&
+                requiredValue(value)
+            ) {
+                sessionId = value;
+                index += 1;
+                continue;
+            }
+            if (argument === "--validate" && requiredValue(value)) {
+                validationCommands.push(value);
+                index += 1;
+                continue;
+            }
+            throw new Error(usage);
+        }
+        return {
+            kind: "ask",
+            task: firstArgument,
+            sessionId,
+            yes,
+            validationCommands,
+        };
+    }
 
     if (
         command === "status" &&

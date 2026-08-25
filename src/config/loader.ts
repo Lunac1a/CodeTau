@@ -12,7 +12,20 @@ export type CodeTauConfig = Readonly<{
     maxOutputBytes: number;
     sourcePath: string;
     rootDirectory: string;
+    naturalLanguage: Readonly<{
+        maxModelTurns: number;
+        maxToolCalls: number;
+        maxRetries: number;
+        additionalProtectedPaths: readonly string[];
+    }>;
 }>;
+
+const NATURAL_LANGUAGE_DEFAULTS = {
+    maxModelTurns: 20,
+    maxToolCalls: 60,
+    maxRetries: 3,
+    additionalProtectedPaths: [] as readonly string[],
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -26,12 +39,73 @@ function positiveInteger(value: unknown): value is number {
     return Number.isSafeInteger(value) && (value as number) > 0;
 }
 
+function nonNegativeInteger(value: unknown): value is number {
+    return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
 function invalidShape(sourcePath: string, message: string): never {
     throw new ConfigLoadError({
         code: "config_shape_invalid",
         message,
         sourcePath,
     });
+}
+
+function parseNaturalLanguage(
+    value: unknown,
+    sourcePath: string,
+): CodeTauConfig["naturalLanguage"] {
+    if (value === undefined) {
+        return NATURAL_LANGUAGE_DEFAULTS;
+    }
+    if (!isRecord(value)) {
+        invalidShape(sourcePath, "Configuration naturalLanguage must be an object");
+    }
+    const allowedKeys = new Set([
+        "maxModelTurns",
+        "maxToolCalls",
+        "maxRetries",
+        "additionalProtectedPaths",
+    ]);
+    const unknownKey = Object.keys(value).find((key) => !allowedKeys.has(key));
+    if (unknownKey !== undefined) {
+        invalidShape(
+            sourcePath,
+            `Unknown naturalLanguage configuration field: ${unknownKey}`,
+        );
+    }
+
+    const maxModelTurns = value.maxModelTurns ?? NATURAL_LANGUAGE_DEFAULTS.maxModelTurns;
+    const maxToolCalls = value.maxToolCalls ?? NATURAL_LANGUAGE_DEFAULTS.maxToolCalls;
+    const maxRetries = value.maxRetries ?? NATURAL_LANGUAGE_DEFAULTS.maxRetries;
+    const additionalProtectedPaths =
+        value.additionalProtectedPaths ??
+        NATURAL_LANGUAGE_DEFAULTS.additionalProtectedPaths;
+
+    if (!positiveInteger(maxModelTurns)) {
+        invalidShape(sourcePath, "naturalLanguage.maxModelTurns must be positive");
+    }
+    if (!nonNegativeInteger(maxToolCalls) || !nonNegativeInteger(maxRetries)) {
+        invalidShape(
+            sourcePath,
+            "naturalLanguage tool and retry budgets must be non-negative integers",
+        );
+    }
+    if (
+        !Array.isArray(additionalProtectedPaths) ||
+        additionalProtectedPaths.some((item) => !nonEmptyString(item))
+    ) {
+        invalidShape(
+            sourcePath,
+            "naturalLanguage.additionalProtectedPaths must contain non-empty paths",
+        );
+    }
+    return {
+        maxModelTurns,
+        maxToolCalls,
+        maxRetries,
+        additionalProtectedPaths: additionalProtectedPaths.map((item) => item.trim()),
+    };
 }
 
 function parseConfig(value: unknown, sourcePath: string): CodeTauConfig {
@@ -46,6 +120,7 @@ function parseConfig(value: unknown, sourcePath: string): CodeTauConfig {
         "commandAllowlist",
         "commandTimeoutMs",
         "maxOutputBytes",
+        "naturalLanguage",
     ]);
     const unknownKey = Object.keys(value).find((key) => !allowedKeys.has(key));
     if (unknownKey !== undefined) {
@@ -92,6 +167,7 @@ function parseConfig(value: unknown, sourcePath: string): CodeTauConfig {
         maxOutputBytes: value.maxOutputBytes,
         sourcePath,
         rootDirectory,
+        naturalLanguage: parseNaturalLanguage(value.naturalLanguage, sourcePath),
     };
 }
 

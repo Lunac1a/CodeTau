@@ -105,6 +105,20 @@ pnpm cli -- status example-run
 pnpm cli -- resume example-run --approval allow-once
 ```
 
+Start a one-shot natural-language coding task with a terminal preflight,
+in-process approvals, automatic validation discovery, and a final delivery
+summary:
+
+```powershell
+pnpm cli
+pnpm cli -- ask "Fix the registration bug" --yes
+```
+
+Natural-language completion still requires current passing evidence from at
+least one selected validation command. The default writable scope is the
+repository, excluding `.git`, `.codetau`, dependency directories, virtual
+environments, and build outputs.
+
 Run the local mini benchmark when LM Studio is ready:
 
 ```powershell

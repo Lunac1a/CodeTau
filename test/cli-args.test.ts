@@ -38,9 +38,38 @@ test("parses run and resume commands", () => {
     });
 });
 
+test("parses interactive and direct natural-language commands", () => {
+    assert.deepEqual(parseCliArgs([]), {
+        kind: "ask",
+        yes: false,
+        validationCommands: [],
+    });
+    assert.deepEqual(
+        parseCliArgs([
+            "ask",
+            "fix the bug",
+            "--session",
+            "natural-1",
+            "--yes",
+            "--validate",
+            "pnpm test",
+            "--validate",
+            "pnpm typecheck",
+        ]),
+        {
+            kind: "ask",
+            task: "fix the bug",
+            sessionId: "natural-1",
+            yes: true,
+            validationCommands: ["pnpm test", "pnpm typecheck"],
+        },
+    );
+});
+
 test("rejects incomplete or unsupported commands", () => {
     const invalidArguments = [
-        [],
+        ["ask"],
+        ["ask", "task", "--validate"],
         ["status"],
         ["status", ""],
         ["status", "session-123", "extra"],

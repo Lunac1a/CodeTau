@@ -79,7 +79,19 @@ export class ListFilesTool implements AgentTool {
                         .filter(Boolean)
                         .join("/");
                     if (entry.isDirectory()) {
-                        pendingDirectories.push(relativePath);
+                        try {
+                            await this.sandbox.resolveExistingPath(relativePath);
+                            pendingDirectories.push(relativePath);
+                        } catch (error) {
+                            if (
+                                error instanceof WorkspaceSandboxError &&
+                                (error.code === "workspace_path_not_allowed" ||
+                                    error.code === "workspace_path_outside")
+                            ) {
+                                continue;
+                            }
+                            throw error;
+                        }
                         continue;
                     }
                     if (!entry.isFile()) {

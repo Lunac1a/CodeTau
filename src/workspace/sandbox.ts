@@ -1,5 +1,5 @@
 import { realpath, stat } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { WorkspaceSandboxError } from "./errors.ts";
 
@@ -127,20 +127,25 @@ function filesystemErrorCode(error: unknown): string | undefined {
 export class WorkspaceSandbox {
     private readonly root: string;
     private readonly allowedPatterns: readonly (readonly string[])[];
+    private readonly deniedPatterns: readonly (readonly string[])[];
 
     private constructor(
         root: string,
         allowedPatterns: readonly (readonly string[])[],
+        deniedPatterns: readonly (readonly string[])[],
     ) {
         this.root = root;
         this.allowedPatterns = allowedPatterns;
+        this.deniedPatterns = deniedPatterns;
     }
 
     static async create(
         workspaceRoot: string,
         allowedPaths: readonly string[],
+        deniedPaths: readonly string[] = [],
     ): Promise<WorkspaceSandbox> {
         const allowedPatterns = allowedPaths.map(normalizePattern);
+        const deniedPatterns = deniedPaths.map(normalizePattern);
         try {
             const canonicalRoot = await realpath(resolve(workspaceRoot));
             const rootStats = await stat(canonicalRoot);
@@ -151,7 +156,11 @@ export class WorkspaceSandbox {
                     target: workspaceRoot,
                 });
             }
-            return new WorkspaceSandbox(canonicalRoot, allowedPatterns);
+            return new WorkspaceSandbox(
+                canonicalRoot,
+                allowedPatterns,
+                deniedPatterns,
+            );
         } catch (error) {
             if (error instanceof WorkspaceSandboxError) {
                 throw error;
@@ -214,8 +223,61 @@ export class WorkspaceSandbox {
         return { absolutePath: canonicalPath, relativePath: canonicalRelativePath };
     }
 
+    async resolveNewFilePath(target: string): Promise<ResolvedWorkspacePath> {
+        const normalizedTarget = normalizeRelativePath(target);
+        this.assertAllowed(normalizedTarget, target);
+
+        const lexicalPath = resolve(this.root, ...normalizedTarget.split("/"));
+        if (!isWithinRoot(this.root, lexicalPath)) {
+            throw new WorkspaceSandboxError({
+                code: "workspace_path_outside",
+                message: `Workspace path escapes the root: ${target}`,
+                target,
+            });
+        }
+
+        let canonicalParent: string;
+        try {
+            canonicalParent = await realpath(dirname(lexicalPath));
+            const parentStats = await stat(canonicalParent);
+            if (!parentStats.isDirectory()) {
+                throw new Error("Parent path is not a directory");
+            }
+        } catch (error) {
+            throw new WorkspaceSandboxError({
+                code: "workspace_parent_invalid",
+                message: `Parent directory is unavailable: ${target}`,
+                target,
+                cause: error,
+            });
+        }
+
+        if (!isWithinRoot(this.root, canonicalParent)) {
+            throw new WorkspaceSandboxError({
+                code: "workspace_path_outside",
+                message: `Workspace parent resolves outside the root: ${target}`,
+                target,
+            });
+        }
+        const absolutePath = join(canonicalParent, basename(lexicalPath));
+        const relativePath = relative(this.root, absolutePath).split(sep).join("/");
+        this.assertAllowed(relativePath, target);
+        return { absolutePath, relativePath };
+    }
+
     private assertAllowed(normalizedPath: string, originalTarget: string): void {
         const pathSegments = normalizedPath.split("/");
+        if (
+            this.deniedPatterns.some((pattern) =>
+                pathMatches(pathSegments, pattern),
+            )
+        ) {
+            throw new WorkspaceSandboxError({
+                code: "workspace_path_not_allowed",
+                message: `Workspace path is protected by deniedPaths: ${originalTarget}`,
+                target: originalTarget,
+            });
+        }
         if (
             !this.allowedPatterns.some((pattern) =>
                 pathMatches(pathSegments, pattern),

@@ -7,6 +7,7 @@ export type TaskSpecContract = {
     workspace: {
         root: string;
         allowedPaths: string[];
+        deniedPaths?: string[];
     };
     policy: {
         forbiddenActions: string[];
@@ -41,6 +42,7 @@ export type SpecSnapshot = {
 
 export type LoadedSpec = {
     sourcePath: string;
+    origin?: "file" | "generated";
     contract: TaskSpecContract;
     context: string;
     digest: string;

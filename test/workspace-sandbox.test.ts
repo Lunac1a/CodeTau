@@ -108,3 +108,35 @@ test("rejects a symlink that resolves outside the workspace", async () => {
         );
     });
 });
+
+test("deniedPaths override a repository-wide allow pattern", async () => {
+    await withWorkspace(async ({ root }) => {
+        const sandbox = await WorkspaceSandbox.create(
+            root,
+            ["**"],
+            ["private/**"],
+        );
+        await assert.rejects(
+            sandbox.resolveExistingPath("private/secret.txt"),
+            expectSandboxError("workspace_path_not_allowed"),
+        );
+        await assert.rejects(
+            sandbox.resolveNewFilePath("private/new.txt"),
+            expectSandboxError("workspace_path_not_allowed"),
+        );
+        assert.equal(
+            (await sandbox.resolveNewFilePath("src/new.ts")).relativePath,
+            "src/new.ts",
+        );
+    });
+});
+
+test("new files require an existing parent inside the workspace", async () => {
+    await withWorkspace(async ({ root }) => {
+        const sandbox = await WorkspaceSandbox.create(root, ["**"]);
+        await assert.rejects(
+            sandbox.resolveNewFilePath("missing/new.ts"),
+            expectSandboxError("workspace_parent_invalid"),
+        );
+    });
+});

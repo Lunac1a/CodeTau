@@ -19,6 +19,12 @@ function configFor(directory: string): CodeTauConfig {
         maxOutputBytes: 1_000,
         sourcePath: join(directory, "codetau.config.json"),
         rootDirectory: directory,
+        naturalLanguage: {
+            maxModelTurns: 20,
+            maxToolCalls: 60,
+            maxRetries: 3,
+            additionalProtectedPaths: [],
+        },
     };
 }
 

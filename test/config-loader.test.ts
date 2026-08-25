@@ -29,6 +29,46 @@ test("loads configuration and resolves its database from the config directory", 
         assert.equal(config.rootDirectory, directory);
         assert.equal(config.databasePath, join(directory, ".codetau", "session.db"));
         assert.equal(config.model, "qwen2.5-7b-instruct");
+        assert.deepEqual(config.naturalLanguage, {
+            maxModelTurns: 20,
+            maxToolCalls: 60,
+            maxRetries: 3,
+            additionalProtectedPaths: [],
+        });
+    } finally {
+        await rm(directory, { recursive: true, force: true });
+    }
+});
+
+test("loads natural-language task defaults from configuration", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "codetau-config-natural-"));
+    const path = join(directory, "codetau.config.json");
+    try {
+        await writeFile(
+            path,
+            JSON.stringify({
+                database: "db.sqlite",
+                model: "model",
+                baseUrl: "http://localhost:1234/v1",
+                commandAllowlist: ["node"],
+                commandTimeoutMs: 1000,
+                maxOutputBytes: 1000,
+                naturalLanguage: {
+                    maxModelTurns: 8,
+                    maxToolCalls: 12,
+                    maxRetries: 1,
+                    additionalProtectedPaths: ["secrets/**"],
+                },
+            }),
+            "utf8",
+        );
+        const config = await loadCodeTauConfig(path);
+        assert.deepEqual(config.naturalLanguage, {
+            maxModelTurns: 8,
+            maxToolCalls: 12,
+            maxRetries: 1,
+            additionalProtectedPaths: ["secrets/**"],
+        });
     } finally {
         await rm(directory, { recursive: true, force: true });
     }

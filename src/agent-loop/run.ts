@@ -635,7 +635,7 @@ async function continueModelLoop(options: {
             );
         }
 
-        for (const toolCall of response.calls) {
+        for (const [callIndex, toolCall] of response.calls.entries()) {
             if (toolCalls >= spec.contract.budget.maxToolCalls) {
                 const budgetEvent = await writer.append({
                     ...writer.nextBase(),
@@ -655,6 +655,7 @@ async function continueModelLoop(options: {
                 ...writer.nextBase(),
                 type: "model_tool_call",
                 toolCall,
+                ...(callIndex === 0 ? { usage: response.usage } : {}),
             });
             toolCalls += 1;
             const signature = toolCallSignature(toolCall);
@@ -886,6 +887,9 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<TaskSt
         specId: options.spec.contract.id,
         specPath: options.spec.sourcePath,
         specDigest: options.spec.digest,
+        ...(options.spec.origin === "generated"
+            ? { specOrigin: "generated" as const }
+            : {}),
         specSnapshot: {
             contract: options.spec.contract,
             context: options.spec.context,
