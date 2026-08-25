@@ -1,4 +1,4 @@
-import { createInterface, type Interface } from "node:readline/promises";
+import { createInterface, type Interface } from "node:readline";
 
 import type { CodeTauConfig } from "../../src/config/loader.ts";
 import {
@@ -51,6 +51,12 @@ export class TerminalUI implements ConversationUI {
     readonly #error: Writer;
     readonly #readline?: Interface;
     readonly #color: boolean;
+    readonly #queuedLines: string[] = [];
+    #lineWaiter?: Readonly<{
+        resolve(line: string): void;
+        reject(error: Error): void;
+    }>;
+    #inputClosed = false;
 
     constructor(options: {
         input: NodeJS.ReadableStream;
@@ -68,6 +74,23 @@ export class TerminalUI implements ConversationUI {
             this.#readline = createInterface({
                 input: options.input,
                 output: options.output,
+            });
+            this.#readline.on("line", (line) => {
+                const waiter = this.#lineWaiter;
+                if (waiter === undefined) {
+                    this.#queuedLines.push(line);
+                    return;
+                }
+                this.#lineWaiter = undefined;
+                waiter.resolve(line);
+            });
+            this.#readline.on("close", () => {
+                this.#inputClosed = true;
+                const waiter = this.#lineWaiter;
+                if (waiter !== undefined) {
+                    this.#lineWaiter = undefined;
+                    waiter.reject(new Error("Terminal input was closed"));
+                }
             });
         }
     }
@@ -290,7 +313,20 @@ export class TerminalUI implements ConversationUI {
         if (this.#readline === undefined) {
             throw new Error("Interactive terminal input is unavailable");
         }
-        return this.#readline.question(prompt);
+        this.#output.write(prompt);
+        const queued = this.#queuedLines.shift();
+        if (queued !== undefined) {
+            return Promise.resolve(queued);
+        }
+        if (this.#inputClosed) {
+            return Promise.reject(new Error("Terminal input was closed"));
+        }
+        if (this.#lineWaiter !== undefined) {
+            return Promise.reject(new Error("Terminal input is already pending"));
+        }
+        return new Promise<string>((resolve, reject) => {
+            this.#lineWaiter = { resolve, reject };
+        });
     }
 
     private paint(text: string, code: string): string {

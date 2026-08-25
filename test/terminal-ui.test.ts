@@ -126,3 +126,31 @@ test("reads single-line and multiline conversation messages", async () => {
         output.destroy();
     }
 });
+
+test("queues exit entered while a conversation turn is still finishing", async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const ui = new TerminalUI({
+        input,
+        output,
+        error: output,
+        interactive: true,
+        color: false,
+    });
+    try {
+        const first = ui.readConversationMessage();
+        input.write("fix the bug\n");
+        assert.equal(await first, "fix the bug");
+
+        // The user types this after Completed is printed but before the next
+        // You> question exists. It must remain queued for that next question.
+        input.write(":exit\n");
+        await nextTurn();
+
+        assert.equal(await ui.readConversationMessage(), undefined);
+    } finally {
+        ui.close();
+        input.destroy();
+        output.destroy();
+    }
+});
