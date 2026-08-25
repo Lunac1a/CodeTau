@@ -1,0 +1,14 @@
+{
+  "database": ".codetau/codetau.db",
+  "model": "qwen2.5-7b-instruct",
+  "baseUrl": "http://localhost:1234/v1",
+  "commandAllowlist": ["node", "node.exe", "npm", "npm.cmd", "pnpm", "pnpm.cmd"],
+  "commandTimeoutMs": 30000,
+  "maxOutputBytes": 100000,
+  "naturalLanguage": {
+    "maxModelTurns": 20,
+    "maxToolCalls": 60,
+    "maxRetries": 3,
+    "additionalProtectedPaths": []
+  }
+}

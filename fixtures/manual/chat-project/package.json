@@ -1,0 +1,11 @@
+{
+  "name": "codetau-manual-chat-project",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.5.3",
+  "scripts": {
+    "codetau": "node --experimental-strip-types --experimental-sqlite ../../../apps/cli/main.ts",
+    "test": "node --test"
+  }
+}
