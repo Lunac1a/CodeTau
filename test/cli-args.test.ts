@@ -39,11 +39,12 @@ test("parses run and resume commands", () => {
 });
 
 test("parses interactive and direct natural-language commands", () => {
-    assert.deepEqual(parseCliArgs([]), {
-        kind: "ask",
-        yes: false,
-        validationCommands: [],
-    });
+    assert.deepEqual(parseCliArgs([]), { kind: "chat" });
+    assert.deepEqual(parseCliArgs(["chat"]), { kind: "chat" });
+    assert.deepEqual(
+        parseCliArgs(["chat", "--conversation", "conversation-1"]),
+        { kind: "chat", conversationId: "conversation-1" },
+    );
     assert.deepEqual(
         parseCliArgs([
             "ask",
@@ -70,6 +71,8 @@ test("rejects incomplete or unsupported commands", () => {
     const invalidArguments = [
         ["ask"],
         ["ask", "task", "--validate"],
+        ["chat", "conversation-1"],
+        ["chat", "--conversation"],
         ["status"],
         ["status", ""],
         ["status", "session-123", "extra"],

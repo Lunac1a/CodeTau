@@ -35,7 +35,17 @@ export interface NaturalLanguageUI {
     close(): void;
 }
 
-export class TerminalUI implements NaturalLanguageUI {
+export interface ConversationUI extends NaturalLanguageUI {
+    renderConversationHeader(options: {
+        conversationId: string;
+        resumed: boolean;
+        completedTurns: number;
+    }): void;
+    readConversationMessage(): Promise<string | undefined>;
+    renderAssistantReply(message: string): void;
+}
+
+export class TerminalUI implements ConversationUI {
     readonly interactive: boolean;
     readonly #output: Writer;
     readonly #error: Writer;
@@ -82,6 +92,58 @@ export class TerminalUI implements NaturalLanguageUI {
             }
             lines.push(line);
         }
+    }
+
+    renderConversationHeader(options: {
+        conversationId: string;
+        resumed: boolean;
+        completedTurns: number;
+    }): void {
+        this.#output.write(
+            [
+                "",
+                "┌─ CodeTau ─────────────────────────────────────────┐",
+                `│ ${options.resumed ? "Resumed" : "New"} conversation: ${terminalSafe(options.conversationId)}`,
+                `│ Completed turns: ${options.completedTurns}`,
+                "│ Enter a message, :multi for multiline input, :exit to leave.",
+                "└───────────────────────────────────────────────────┘",
+                "",
+            ].join("\n"),
+        );
+    }
+
+    async readConversationMessage(): Promise<string | undefined> {
+        let first = "";
+        while (first.trim() === "") {
+            first = await this.question(`${this.paint("You", "36")}> `);
+            if (first.trim() === ":exit" || first.trim() === ":quit") {
+                return undefined;
+            }
+        }
+        if (first.trim() !== ":multi") {
+            return first.trim();
+        }
+        this.#output.write("Multiline mode; enter :send on its own line to submit.\n");
+        const lines: string[] = [];
+        while (true) {
+            const line = await this.question("... ");
+            if (line.trim() === ":exit" || line.trim() === ":quit") {
+                return undefined;
+            }
+            if (line.trim() === ":send" || line.trim() === ":run") {
+                const message = lines.join("\n").trim();
+                if (message !== "") return message;
+                this.#output.write("Message cannot be empty.\n");
+                continue;
+            }
+            lines.push(line);
+        }
+    }
+
+    renderAssistantReply(message: string): void {
+        this.#output.write(
+            `\n${this.paint("CodeTau", "32")}> ${terminalSafe(message)}\n\n`,
+        );
     }
 
     async selectValidationCommands(

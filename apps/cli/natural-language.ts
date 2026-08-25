@@ -23,7 +23,7 @@ function commandKey(value: string): string {
     return process.platform === "win32" ? value.toLowerCase() : value;
 }
 
-function assertAllowedCommands(
+export function assertValidationCommandsAllowed(
     commands: readonly ValidationCommand[],
     config: CodeTauConfig,
 ): void {
@@ -56,6 +56,9 @@ export async function runNaturalLanguageCommand(options: {
     eventStore: EventStore;
     runner: SessionRunnerLike;
     ui: NaturalLanguageUI;
+    preparedCommands?: readonly ValidationCommand[];
+    skipPreflight?: boolean;
+    conversationContext?: string;
 }): Promise<number> {
     const { command, config, eventStore, runner, ui } = options;
     if (!ui.interactive && !command.yes) {
@@ -66,8 +69,13 @@ export async function runNaturalLanguageCommand(options: {
     if (task === undefined) {
         return 1;
     }
-    const inspection = await inspectProject(config.rootDirectory);
-    const explicitCommands = command.validationCommands.map(parseValidationCommand);
+    const inspection =
+        options.preparedCommands === undefined
+            ? await inspectProject(config.rootDirectory)
+            : { validationCommands: [] };
+    const explicitCommands =
+        options.preparedCommands ??
+        command.validationCommands.map(parseValidationCommand);
     let commands: readonly ValidationCommand[];
     if (explicitCommands.length > 0) {
         commands = explicitCommands;
@@ -86,13 +94,16 @@ export async function runNaturalLanguageCommand(options: {
     commands = await Promise.all(
         commands.map(normalizeValidationCommandForPlatform),
     );
-    assertAllowedCommands(commands, config);
+    assertValidationCommandsAllowed(commands, config);
 
-    const confirmed = await ui.confirmPreflight({
-        config,
-        commands,
-        assumeYes: command.yes,
-    });
+    const confirmed =
+        options.skipPreflight === true
+            ? true
+            : await ui.confirmPreflight({
+                  config,
+                  commands,
+                  assumeYes: command.yes,
+              });
     if (!confirmed) {
         return 1;
     }
@@ -100,6 +111,7 @@ export async function runNaturalLanguageCommand(options: {
     const sessionId = command.sessionId ?? randomUUID();
     const spec = await buildNaturalLanguageTask({
         task,
+        context: options.conversationContext,
         sessionId,
         validationCommands: commands,
         config,

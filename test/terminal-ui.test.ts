@@ -79,3 +79,50 @@ test("allows an interactive task to be cancelled", async () => {
         output.destroy();
     }
 });
+
+test("reads single-line and multiline conversation messages", async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    let rendered = "";
+    output.on("data", (chunk: Buffer) => {
+        rendered += chunk.toString("utf8");
+    });
+    const ui = new TerminalUI({
+        input,
+        output,
+        error: output,
+        interactive: true,
+        color: false,
+    });
+    try {
+        ui.renderConversationHeader({
+            conversationId: "conversation-1",
+            resumed: false,
+            completedTurns: 0,
+        });
+        const first = ui.readConversationMessage();
+        input.write("fix the greeting\n");
+        assert.equal(await first, "fix the greeting");
+
+        const second = ui.readConversationMessage();
+        input.write(":multi\n");
+        await nextTurn();
+        input.write("create a file\n");
+        await nextTurn();
+        input.write("and test it\n");
+        await nextTurn();
+        input.write(":send\n");
+        assert.equal(await second, "create a file\nand test it");
+
+        ui.renderAssistantReply("Done and verified.");
+        const exit = ui.readConversationMessage();
+        input.write(":exit\n");
+        assert.equal(await exit, undefined);
+        assert.match(rendered, /New conversation: conversation-1/u);
+        assert.match(rendered, /CodeTau> Done and verified/u);
+    } finally {
+        ui.close();
+        input.destroy();
+        output.destroy();
+    }
+});

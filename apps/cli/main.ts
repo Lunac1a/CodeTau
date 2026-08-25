@@ -2,15 +2,22 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { loadCodeTauConfig, type CodeTauConfig } from "../../src/config/loader.ts";
+import { SQLiteConversationStore } from "../../src/conversation/sqlite-conversation-store.ts";
+import type { ConversationStore } from "../../src/conversation/store.ts";
 import type { EventStore } from "../../src/persistence/event-store.ts";
 import { SQLiteEventStore } from "../../src/persistence/sqlite-event-store.ts";
 import { SessionRunner, type SessionRunnerLike } from "../../src/session/runner.ts";
 import { parseCliArgs } from "./args.ts";
+import { runConversationCommand } from "./conversation.ts";
 import { runNaturalLanguageCommand } from "./natural-language.ts";
 import { ObservedEventStore } from "./observed-event-store.ts";
 import { runSessionCommand } from "./session.ts";
 import { runStatusCommand } from "./status.ts";
-import { TerminalUI, type NaturalLanguageUI } from "./terminal-ui.ts";
+import {
+    TerminalUI,
+    type ConversationUI,
+    type NaturalLanguageUI,
+} from "./terminal-ui.ts";
 
 type CliWriter = {
     write(text: string): unknown;
@@ -30,6 +37,8 @@ export type RunCliOptions = Readonly<{
         eventStore: EventStore,
     ) => SessionRunnerLike;
     createNaturalLanguageUI?: () => NaturalLanguageUI;
+    createConversationUI?: () => ConversationUI;
+    createConversationStore?: (databasePath: string) => ConversationStore;
 }>;
 
 function errorMessage(error: unknown): string {
@@ -39,6 +48,7 @@ function errorMessage(error: unknown): string {
 export async function runCli(options: RunCliOptions): Promise<number> {
     let eventStore: EventStore | undefined;
     let naturalLanguageUI: NaturalLanguageUI | undefined;
+    let conversationStore: ConversationStore | undefined;
 
     try {
         const command = parseCliArgs(options.argv);
@@ -48,9 +58,11 @@ export async function runCli(options: RunCliOptions): Promise<number> {
         const baseEventStore = options.createEventStore?.(config.databasePath) ??
             new SQLiteEventStore(config.databasePath);
         eventStore = baseEventStore;
-        if (command.kind === "ask") {
+        if (command.kind === "ask" || command.kind === "chat") {
             naturalLanguageUI =
-                options.createNaturalLanguageUI?.() ??
+                (command.kind === "chat"
+                    ? options.createConversationUI?.()
+                    : options.createNaturalLanguageUI?.()) ??
                 new TerminalUI({
                     input: options.stdin ?? process.stdin,
                     output: options.stdout as NodeJS.WritableStream & CliWriter,
@@ -62,10 +74,26 @@ export async function runCli(options: RunCliOptions): Promise<number> {
                 (event) => naturalLanguageUI?.renderEvent(event),
             );
         }
+        if (command.kind === "chat") {
+            conversationStore =
+                options.createConversationStore?.(config.databasePath) ??
+                new SQLiteConversationStore(config.databasePath);
+        }
 
         const result =
             command.kind === "status"
                 ? await runStatusCommand(command, eventStore)
+                : command.kind === "chat"
+                  ? await runConversationCommand({
+                        command,
+                        config,
+                        eventStore,
+                        conversationStore: conversationStore as ConversationStore,
+                        runner:
+                            options.createSessionRunner?.(config, eventStore) ??
+                            new SessionRunner({ config, eventStore }),
+                        ui: naturalLanguageUI as ConversationUI,
+                    })
                 : command.kind === "ask"
                   ? await runNaturalLanguageCommand({
                         command,
@@ -96,6 +124,7 @@ export async function runCli(options: RunCliOptions): Promise<number> {
         return 1;
     } finally {
         naturalLanguageUI?.close();
+        await conversationStore?.close();
         await eventStore?.close();
     }
 }

@@ -56,9 +56,9 @@ approvals, structured patches, and the bounded validation feedback loop are
 implemented and tested. A task can reach `completed` only after every Spec
 acceptance command has current passing evidence. Phase 4 currently includes an
 OpenAI-compatible Model Provider configured for local LM Studio, a Session
-Runner that assembles the runtime dependencies, CLI `run`, `resume`, and
-`status` commands, and CodeTau-Bench Mini with isolated repeated runs and
-pass@k reporting. Phase 4.1 reliability hardening keeps repeated Bench prompts
+Runner that assembles the runtime dependencies, persistent CLI conversations,
+CLI `ask`, `run`, `resume`, and `status` commands, and CodeTau-Bench Mini with
+isolated repeated runs and pass@k reporting. Phase 4.1 reliability hardening keeps repeated Bench prompts
 identical, grounds the model with the complete acceptance contract, adds
 tool-error recovery guidance, stops identical failed-call loops, and reports
 structured failure categories. The Agent Loop now owns completion: once every
@@ -105,12 +105,19 @@ pnpm cli -- status example-run
 pnpm cli -- resume example-run --approval allow-once
 ```
 
-Start a one-shot natural-language coding task with a terminal preflight,
-in-process approvals, automatic validation discovery, and a final delivery
-summary:
+Start the persistent terminal conversation. Validation is selected once, then
+each message runs as its own persisted, approvable Agent Session while keeping
+the earlier conversation as context:
 
 ```powershell
 pnpm cli
+# Type :multi for multiline input and :exit to leave.
+pnpm cli -- chat --conversation <conversation-id>
+```
+
+For scripts and one-shot tasks, use:
+
+```powershell
 pnpm cli -- ask "Fix the registration bug" --yes
 ```
 

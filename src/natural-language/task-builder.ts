@@ -17,6 +17,7 @@ export const BUILT_IN_PROTECTED_PATHS = [
 
 export type BuildNaturalLanguageTaskOptions = Readonly<{
     task: string;
+    context?: string;
     sessionId: string;
     validationCommands: readonly ValidationCommand[];
     config: CodeTauConfig;
@@ -91,7 +92,7 @@ export async function buildNaturalLanguageTask(
         contract,
         `codetau://generated/${options.sessionId}`,
     );
-    const context = task;
+    const context = options.context?.trim() || task;
     return {
         sourcePath: `codetau://generated/${options.sessionId}`,
         origin: "generated",

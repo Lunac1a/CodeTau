@@ -2,6 +2,10 @@ import type { ApprovalResponse } from "../../src/spec/types.ts";
 
 export type CliCommand =
     | {
+          readonly kind: "chat";
+          readonly conversationId?: string;
+      }
+    | {
           readonly kind: "ask";
           readonly task?: string;
           readonly sessionId?: string;
@@ -26,6 +30,7 @@ export type CliCommand =
 export const usage = [
     "Usage:",
     "  codetau",
+    "  codetau chat [--conversation <conversation-id>]",
     "  codetau ask <task> [--session <session-id>] [--yes] [--validate <command>]...",
     "  codetau run <spec-path> [--session <session-id>]",
     "  codetau resume <session-id> [--approval <allow-once|allow-session|deny>]",
@@ -45,11 +50,20 @@ export function parseCliArgs(argv: readonly string[]): CliCommand {
     const [command, firstArgument, ...remaining] = normalizedArgv;
 
     if (command === undefined) {
-        return {
-            kind: "ask",
-            yes: false,
-            validationCommands: [],
-        };
+        return { kind: "chat" };
+    }
+
+    if (command === "chat") {
+        if (firstArgument === undefined && remaining.length === 0) {
+            return { kind: "chat" };
+        }
+        if (
+            firstArgument === "--conversation" &&
+            remaining.length === 1 &&
+            requiredValue(remaining[0])
+        ) {
+            return { kind: "chat", conversationId: remaining[0] };
+        }
     }
 
     if (command === "ask" && requiredValue(firstArgument)) {
