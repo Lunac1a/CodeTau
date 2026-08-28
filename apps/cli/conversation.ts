@@ -151,6 +151,7 @@ export async function runConversationCommand(options: {
                     previousTurns,
                     userMessage,
                 ),
+                renderReport: false,
             });
             const state = await eventStore.loadTaskState(sessionId);
             if (state === undefined) {

@@ -10,6 +10,7 @@ import type { SessionReport } from "../../src/session/report.ts";
 import type { ApprovalResponse } from "../../src/spec/types.ts";
 import type { AgentEvent, ToolCall } from "../../src/types.ts";
 import { BUILT_IN_PROTECTED_PATHS } from "../../src/natural-language/task-builder.ts";
+import { renderTerminalMarkdown } from "./markdown.ts";
 
 type Writer = { write(text: string): unknown };
 
@@ -51,6 +52,8 @@ export class TerminalUI implements ConversationUI {
     readonly #error: Writer;
     readonly #readline?: Interface;
     readonly #color: boolean;
+    readonly #verbose: boolean;
+    readonly #toolNames = new Map<string, string>();
     readonly #queuedLines: string[] = [];
     #lineWaiter?: Readonly<{
         resolve(line: string): void;
@@ -64,12 +67,14 @@ export class TerminalUI implements ConversationUI {
         error: Writer;
         interactive: boolean;
         color?: boolean;
+        verbose?: boolean;
     }) {
         this.interactive = options.interactive;
         this.#output = options.output;
         this.#error = options.error;
         this.#color =
             (options.color ?? options.interactive) && process.env.NO_COLOR === undefined;
+        this.#verbose = options.verbose ?? false;
         if (options.interactive) {
             this.#readline = createInterface({
                 input: options.input,
@@ -164,8 +169,11 @@ export class TerminalUI implements ConversationUI {
     }
 
     renderAssistantReply(message: string): void {
+        const rendered = renderTerminalMarkdown(terminalSafe(message), {
+            color: this.#color,
+        });
         this.#output.write(
-            `\n${this.paint("CodeTau", "32")}> ${terminalSafe(message)}\n\n`,
+            `\n${this.paint("CodeTau", "32")}> ${rendered}\n\n`,
         );
     }
 
@@ -260,21 +268,36 @@ export class TerminalUI implements ConversationUI {
         if (event.type === "session_started") {
             this.#output.write(`${this.paint("●", "36")} Session started\n`);
         } else if (event.type === "model_tool_call") {
-            this.#output.write(
-                `${this.paint("●", "36")} ${describeCall(event.toolCall)}\n`,
-            );
+            this.#toolNames.set(event.toolCall.id, event.toolCall.name);
+            if (
+                this.#verbose ||
+                event.toolCall.name === "apply_patch" ||
+                event.toolCall.name === "create_file" ||
+                event.toolCall.name === "run_validation"
+            ) {
+                this.#output.write(
+                    `${this.paint(this.#verbose ? "●" : "◆", "36")} ${describeCall(event.toolCall)}\n`,
+                );
+            }
         } else if (event.type === "tool_result") {
-            const symbol = event.result.ok
+            const toolName = this.#toolNames.get(event.toolCallId);
+            this.#toolNames.delete(event.toolCallId);
+            const passed = toolResultPassed(event.result);
+            const symbol = passed
                 ? this.paint("✓", "32")
                 : this.paint("✗", "31");
             const message = event.result.ok
                 ? describeOutput(event.result.output)
                 : `${event.result.error.code}: ${event.result.error.message}`;
-            this.#output.write(`${symbol} ${terminalSafe(message)}\n`);
+            if (this.#verbose || !passed || toolName === "run_validation") {
+                this.#output.write(`${symbol} ${terminalSafe(message)}\n`);
+            }
         } else if (event.type === "model_text" && event.text.trim() !== "") {
-            this.#output.write(
-                `${this.paint("●", "36")} ${terminalSafe(event.text.trim())}\n`,
-            );
+            if (this.#verbose) {
+                this.#output.write(
+                    `${this.paint("●", "36")} ${terminalSafe(event.text.trim())}\n`,
+                );
+            }
         }
     }
 
@@ -290,9 +313,11 @@ export class TerminalUI implements ConversationUI {
         this.#output.write(
             `Validation: ${report.passedValidationIndexes.length}/${report.validationCount} passed\n`,
         );
-        this.#output.write(
-            `Usage: ${report.modelTurns} model turns, ${report.toolCalls} tool calls, ${report.inputTokens}/${report.outputTokens} input/output tokens\n`,
-        );
+        if (this.#verbose) {
+            this.#output.write(
+                `Usage: ${report.modelTurns} model turns, ${report.toolCalls} tool calls, ${report.inputTokens}/${report.outputTokens} input/output tokens\n`,
+            );
+        }
         this.#output.write(`Session: ${terminalSafe(report.sessionId)}\n`);
     }
 
@@ -358,4 +383,10 @@ function describeOutput(output: unknown): string {
         return record.passed ? "Validation passed" : "Validation failed";
     }
     return "Tool completed";
+}
+
+function toolResultPassed(result: Extract<AgentEvent, { type: "tool_result" }>["result"]): boolean {
+    if (!result.ok) return false;
+    if (typeof result.output !== "object" || result.output === null) return true;
+    return Reflect.get(result.output, "passed") !== false;
 }

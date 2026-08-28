@@ -154,3 +154,163 @@ test("queues exit entered while a conversation turn is still finishing", async (
         output.destroy();
     }
 });
+
+test("renders concise progress by default and hides model reasoning", () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    let rendered = "";
+    output.on("data", (chunk: Buffer) => {
+        rendered += chunk.toString("utf8");
+    });
+    const ui = new TerminalUI({
+        input,
+        output,
+        error: output,
+        interactive: false,
+        color: false,
+    });
+    const base = {
+        sessionId: "session-1",
+        timestamp: "2026-08-28T00:00:00.000Z",
+    };
+
+    ui.renderEvent({
+        ...base,
+        id: "event-1",
+        sequence: 1,
+        type: "model_text",
+        text: "Long internal reasoning",
+        usage: { inputTokens: 10, outputTokens: 10 },
+    });
+    ui.renderEvent({
+        ...base,
+        id: "event-2",
+        sequence: 2,
+        type: "model_tool_call",
+        toolCall: { id: "read-1", name: "read_file", input: { path: "src/a.ts" } },
+    });
+    ui.renderEvent({
+        ...base,
+        id: "event-3",
+        sequence: 3,
+        type: "tool_result",
+        toolCallId: "read-1",
+        result: { ok: true, output: { path: "src/a.ts" } },
+    });
+    ui.renderEvent({
+        ...base,
+        id: "event-4",
+        sequence: 4,
+        type: "model_tool_call",
+        toolCall: { id: "validate-1", name: "run_validation", input: { commandIndex: 0 } },
+    });
+    ui.renderEvent({
+        ...base,
+        id: "event-5",
+        sequence: 5,
+        type: "tool_result",
+        toolCallId: "validate-1",
+        result: { ok: true, output: { passed: false } },
+    });
+    ui.renderReport({
+        sessionId: "session-1",
+        status: "failed",
+        changedFiles: [],
+        passedValidationIndexes: [],
+        validationCount: 1,
+        modelTurns: 2,
+        toolCalls: 2,
+        inputTokens: 20,
+        outputTokens: 10,
+    });
+
+    assert.doesNotMatch(rendered, /Long internal reasoning/u);
+    assert.doesNotMatch(rendered, /Reading src\/a\.ts/u);
+    assert.match(rendered, /Run validation #0/u);
+    assert.match(rendered, /✗ Validation failed/u);
+    assert.doesNotMatch(rendered, /Usage:/u);
+    ui.close();
+    input.destroy();
+    output.destroy();
+});
+
+test("verbose mode shows reasoning and detailed usage", () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    let rendered = "";
+    output.on("data", (chunk: Buffer) => {
+        rendered += chunk.toString("utf8");
+    });
+    const ui = new TerminalUI({
+        input,
+        output,
+        error: output,
+        interactive: false,
+        color: false,
+        verbose: true,
+    });
+    ui.renderEvent({
+        id: "event-1",
+        sessionId: "session-1",
+        sequence: 1,
+        timestamp: "2026-08-28T00:00:00.000Z",
+        type: "model_text",
+        text: "Detailed reasoning",
+        usage: { inputTokens: 10, outputTokens: 5 },
+    });
+    ui.renderReport({
+        sessionId: "session-1",
+        status: "completed",
+        changedFiles: [],
+        passedValidationIndexes: [0],
+        validationCount: 1,
+        modelTurns: 1,
+        toolCalls: 0,
+        inputTokens: 10,
+        outputTokens: 5,
+    });
+
+    assert.match(rendered, /Detailed reasoning/u);
+    assert.match(rendered, /Usage: 1 model turns/u);
+    ui.close();
+    input.destroy();
+    output.destroy();
+});
+
+test("renders safe terminal markdown in assistant replies", () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    let rendered = "";
+    output.on("data", (chunk: Buffer) => {
+        rendered += chunk.toString("utf8");
+    });
+    const ui = new TerminalUI({
+        input,
+        output,
+        error: output,
+        interactive: false,
+        color: false,
+    });
+
+    ui.renderAssistantReply([
+        "# Result",
+        "",
+        "- Changed **one file**",
+        "- See [docs](https://example.com)",
+        "",
+        "```ts",
+        "const answer = 42;",
+        "```",
+        "\u001B[31muntrusted",
+    ].join("\n"));
+
+    assert.match(rendered, /CodeTau> Result/u);
+    assert.match(rendered, /• Changed one file/u);
+    assert.match(rendered, /docs \(https:\/\/example\.com\)/u);
+    assert.match(rendered, /  const answer = 42;/u);
+    assert.doesNotMatch(rendered, /\*\*|```|\u001B\[/u);
+    assert.match(rendered, /�\[31muntrusted/u);
+    ui.close();
+    input.destroy();
+    output.destroy();
+});

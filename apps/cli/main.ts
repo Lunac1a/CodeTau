@@ -68,6 +68,7 @@ export async function runCli(options: RunCliOptions): Promise<number> {
                     output: options.stdout as NodeJS.WritableStream & CliWriter,
                     error: options.stderr,
                     interactive: options.interactive ?? false,
+                    verbose: command.verbose ?? false,
                 });
             eventStore = new ObservedEventStore(
                 baseEventStore,

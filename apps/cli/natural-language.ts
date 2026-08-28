@@ -59,6 +59,7 @@ export async function runNaturalLanguageCommand(options: {
     preparedCommands?: readonly ValidationCommand[];
     skipPreflight?: boolean;
     conversationContext?: string;
+    renderReport?: boolean;
 }): Promise<number> {
     const { command, config, eventStore, runner, ui } = options;
     if (!ui.interactive && !command.yes) {
@@ -142,6 +143,8 @@ export async function runNaturalLanguageCommand(options: {
     }
 
     const events = await eventStore.loadSession(state.sessionId);
-    ui.renderReport(buildSessionReport(state, events));
+    if (options.renderReport !== false) {
+        ui.renderReport(buildSessionReport(state, events));
+    }
     return state.status === "completed" ? 0 : 1;
 }

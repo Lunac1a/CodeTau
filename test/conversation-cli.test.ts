@@ -76,6 +76,7 @@ test("runs multiple messages in one persistent conversation", async () => {
         },
     };
     const contexts: string[] = [];
+    const reportRendering: Array<boolean | undefined> = [];
     let replyNumber = 0;
     const config: CodeTauConfig = {
         databasePath: ":memory:",
@@ -104,6 +105,7 @@ test("runs multiple messages in one persistent conversation", async () => {
             ui,
             async runTask(options) {
                 contexts.push(options.conversationContext ?? "");
+                reportRendering.push(options.renderReport);
                 const sessionId = options.command.sessionId as string;
                 states.set(sessionId, {
                     sessionId,
@@ -125,6 +127,7 @@ test("runs multiple messages in one persistent conversation", async () => {
         });
         assert.equal(exitCode, 0);
         assert.deepEqual(replies, ["reply 1", "reply 2"]);
+        assert.deepEqual(reportRendering, [false, false]);
         assert.match(contexts[1] ?? "", /Fix the greeting/u);
         assert.match(contexts[1] ?? "", /reply 1/u);
         const turns = await store.loadTurns("conversation-1");

@@ -65,6 +65,34 @@ test("parses interactive and direct natural-language commands", () => {
             validationCommands: ["pnpm test", "pnpm typecheck"],
         },
     );
+    assert.deepEqual(parseCliArgs(["--verbose"]), {
+        kind: "chat",
+        verbose: true,
+    });
+    assert.deepEqual(
+        parseCliArgs([
+            "chat",
+            "--conversation",
+            "conversation-1",
+            "--verbose",
+        ]),
+        {
+            kind: "chat",
+            conversationId: "conversation-1",
+            verbose: true,
+        },
+    );
+    assert.deepEqual(
+        parseCliArgs(["ask", "fix the bug", "--verbose"]),
+        {
+            kind: "ask",
+            task: "fix the bug",
+            sessionId: undefined,
+            yes: false,
+            validationCommands: [],
+            verbose: true,
+        },
+    );
 });
 
 test("rejects incomplete or unsupported commands", () => {
@@ -79,6 +107,8 @@ test("rejects incomplete or unsupported commands", () => {
         ["run"],
         ["run", "specs/bench/fix-greeting/task.md", "--unknown", "value"],
         ["resume", "session-1", "--approval", "yes"],
+        ["status", "session-1", "--verbose"],
+        ["chat", "--verbose", "--verbose"],
     ];
 
     for (const argv of invalidArguments) {

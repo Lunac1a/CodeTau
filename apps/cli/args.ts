@@ -4,6 +4,7 @@ export type CliCommand =
     | {
           readonly kind: "chat";
           readonly conversationId?: string;
+          readonly verbose?: boolean;
       }
     | {
           readonly kind: "ask";
@@ -11,6 +12,7 @@ export type CliCommand =
           readonly sessionId?: string;
           readonly yes: boolean;
           readonly validationCommands: readonly string[];
+          readonly verbose?: boolean;
       }
     | {
           readonly kind: "status";
@@ -29,9 +31,9 @@ export type CliCommand =
 
 export const usage = [
     "Usage:",
-    "  codetau",
-    "  codetau chat [--conversation <conversation-id>]",
-    "  codetau ask <task> [--session <session-id>] [--yes] [--validate <command>]...",
+    "  codetau [--verbose]",
+    "  codetau chat [--conversation <conversation-id>] [--verbose]",
+    "  codetau ask <task> [--session <session-id>] [--yes] [--validate <command>]... [--verbose]",
     "  codetau run <spec-path> [--session <session-id>]",
     "  codetau resume <session-id> [--approval <allow-once|allow-session|deny>]",
     "  codetau status <session-id>",
@@ -46,23 +48,33 @@ function isApprovalResponse(value: string): value is ApprovalResponse {
 }
 
 export function parseCliArgs(argv: readonly string[]): CliCommand {
-    const normalizedArgv = argv[0] === "--" ? argv.slice(1) : argv;
+    const rawArgv = argv[0] === "--" ? argv.slice(1) : argv;
+    const verboseArguments = rawArgv.filter((argument) => argument === "--verbose");
+    if (verboseArguments.length > 1) {
+        throw new Error(usage);
+    }
+    const verbose = verboseArguments.length === 1;
+    const normalizedArgv = rawArgv.filter((argument) => argument !== "--verbose");
     const [command, firstArgument, ...remaining] = normalizedArgv;
 
     if (command === undefined) {
-        return { kind: "chat" };
+        return verbose ? { kind: "chat", verbose: true } : { kind: "chat" };
     }
 
     if (command === "chat") {
         if (firstArgument === undefined && remaining.length === 0) {
-            return { kind: "chat" };
+            return verbose ? { kind: "chat", verbose: true } : { kind: "chat" };
         }
         if (
             firstArgument === "--conversation" &&
             remaining.length === 1 &&
             requiredValue(remaining[0])
         ) {
-            return { kind: "chat", conversationId: remaining[0] };
+            return {
+                kind: "chat",
+                conversationId: remaining[0],
+                ...(verbose ? { verbose: true } : {}),
+            };
         }
     }
 
@@ -99,7 +111,12 @@ export function parseCliArgs(argv: readonly string[]): CliCommand {
             sessionId,
             yes,
             validationCommands,
+            ...(verbose ? { verbose: true } : {}),
         };
+    }
+
+    if (verbose) {
+        throw new Error(usage);
     }
 
     if (
