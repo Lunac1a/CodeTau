@@ -3,14 +3,14 @@ export class UserDirectory {
 
     register({ name, email }) {
         const normalizedName = name.trim();
-        const storedEmail = email.trim();
+        const storedEmail = email.trim().toLowerCase();
         if (normalizedName === "") {
             throw new Error("Name is required");
         }
         if (!storedEmail.includes("@")) {
             throw new Error("Email is invalid");
         }
-        if (this.#users.some((user) => user.email === storedEmail)) {
+        if (this.#users.some((user) => user.email.toLowerCase() === storedEmail)) {
             throw new Error("Email is already registered");
         }
         const user = {

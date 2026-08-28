@@ -18,9 +18,10 @@ export function conversationHistoryContext(
     const history = turns
         .filter((turn) => turn.assistantMessage !== undefined)
         .slice(-8)
-        .map(
-            (turn) =>
-                `User: ${turn.userMessage}\nAssistant: ${turn.assistantMessage}`,
+        .map((turn) =>
+            turn.status === "completed"
+                ? `User: ${turn.userMessage}\nAssistant: ${turn.assistantMessage}`
+                : `User: ${turn.userMessage}\nAssistant: [${turn.status} turn; unverified response omitted]`,
         )
         .join("\n\n");
     return bounded(
@@ -40,8 +41,6 @@ function executionEvidence(events: readonly AgentEvent[]): string {
     for (const event of events) {
         if (event.type === "model_tool_call") {
             calls.set(event.toolCall.id, event.toolCall.name);
-        } else if (event.type === "model_text" && event.text.trim() !== "") {
-            lines.push(`Agent reasoning: ${event.text.trim()}`);
         } else if (event.type === "tool_result") {
             const name = calls.get(event.toolCallId) ?? "tool";
             lines.push(`${name}: ${JSON.stringify(event.result)}`);
@@ -65,6 +64,14 @@ export async function generateConversationReply(options: {
     report: SessionReport;
     events: readonly AgentEvent[];
 }): Promise<string> {
+    const validationComplete =
+        options.report.validationCount > 0 &&
+        options.report.passedValidationIndexes.length ===
+            options.report.validationCount;
+    if (options.report.status !== "completed" || !validationComplete) {
+        return fallbackConversationReply(options.report);
+    }
+
     const history = conversationHistoryContext(options.turns, options.userMessage);
     const evidence = executionEvidence(options.events);
     const response = await options.model.generate({
@@ -75,6 +82,7 @@ export async function generateConversationReply(options: {
                     "You are the conversational response layer for CodeTau CLI.",
                     "Answer the user's latest message using only the supplied conversation and execution evidence.",
                     "State what was delivered, answer direct questions, and mention failed or missing validation plainly.",
+                    "The structured Turn status, changed files, validation count, runtime message, and tool results are authoritative. Model prose from the execution is intentionally excluded.",
                     "Be concise. Do not claim a file changed or a check passed unless the evidence says so.",
                 ].join("\n"),
             },
