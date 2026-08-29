@@ -5,6 +5,15 @@
   "commandAllowlist": ["node", "node.exe", "npm", "npm.cmd", "pnpm", "pnpm.cmd", "python", "python.exe", "pytest", "pytest.exe"],
   "commandTimeoutMs": 30000,
   "maxOutputBytes": 100000,
+  "contextManagement": {
+    "maxContextTokens": 16384,
+    "reservedOutputTokens": 2048,
+    "safetyMarginPercent": 10,
+    "recentConversationTurns": 4,
+    "recentToolExchanges": 6,
+    "maxSummaryTokens": 1200,
+    "maxToolResultTokens": 2048
+  },
   "naturalLanguage": {
     "maxModelTurns": 20,
     "maxToolCalls": 60,

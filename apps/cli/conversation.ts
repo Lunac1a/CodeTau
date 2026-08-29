@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 
 import type { CodeTauConfig } from "../../src/config/loader.ts";
+import { ContextManager } from "../../src/context/manager.ts";
+import { buildConversationContext } from "../../src/conversation/context.ts";
 import {
-    conversationHistoryContext,
     fallbackConversationReply,
     generateConversationReply,
 } from "../../src/conversation/reply.ts";
@@ -31,6 +32,7 @@ type CreateReply = (options: {
     turns: Awaited<ReturnType<ConversationStore["loadTurns"]>>;
     report: SessionReport;
     events: readonly AgentEvent[];
+    conversationContext?: string;
 }) => Promise<string>;
 
 function turnStatus(
@@ -102,6 +104,7 @@ export async function runConversationCommand(options: {
         resumed,
         completedTurns: initialTurns.filter((turn) => turn.status !== "running")
             .length,
+        contextBudget: config.contextManagement,
     });
 
     const runTask = options.runTask ?? runNaturalLanguageCommand;
@@ -109,11 +112,13 @@ export async function runConversationCommand(options: {
         baseUrl: config.baseUrl,
         model: config.model,
     });
+    const contextManager = new ContextManager(config.contextManagement);
     const createReply: CreateReply =
         options.createReply ??
         ((replyOptions) =>
             generateConversationReply({
                 model: defaultModel,
+                contextManager,
                 ...replyOptions,
             }));
 
@@ -122,6 +127,17 @@ export async function runConversationCommand(options: {
         if (userMessage === undefined) return 0;
 
         const previousTurns = await conversationStore.loadTurns(conversationId);
+        const conversationContext = await buildConversationContext({
+            conversationId,
+            turns: previousTurns,
+            currentMessage: userMessage,
+            store: conversationStore,
+            eventStore,
+            model: defaultModel,
+            contextManager,
+            now,
+        });
+        ui.renderContextStatus?.(conversationContext);
         const turnId = randomUUID();
         const sessionId = randomUUID();
         await conversationStore.beginTurn({
@@ -147,10 +163,7 @@ export async function runConversationCommand(options: {
                 ui,
                 preparedCommands: conversation.validationCommands,
                 skipPreflight: true,
-                conversationContext: conversationHistoryContext(
-                    previousTurns,
-                    userMessage,
-                ),
+                conversationContext: conversationContext.text,
                 renderReport: false,
             });
             const state = await eventStore.loadTaskState(sessionId);
@@ -166,6 +179,7 @@ export async function runConversationCommand(options: {
                     turns: previousTurns,
                     report,
                     events,
+                    conversationContext: conversationContext.text,
                 });
             } catch {
                 assistantMessage = fallbackConversationReply(report);

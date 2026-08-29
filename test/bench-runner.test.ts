@@ -17,6 +17,15 @@ function configFor(directory: string): CodeTauConfig {
         commandAllowlist: [],
         commandTimeoutMs: 1_000,
         maxOutputBytes: 1_000,
+        contextManagement: {
+            maxContextTokens: 16_384,
+            reservedOutputTokens: 2_048,
+            safetyMarginPercent: 10,
+            recentConversationTurns: 4,
+            recentToolExchanges: 6,
+            maxSummaryTokens: 1_200,
+            maxToolResultTokens: 2_048,
+        },
         sourcePath: join(directory, "codetau.config.json"),
         rootDirectory: directory,
         naturalLanguage: {

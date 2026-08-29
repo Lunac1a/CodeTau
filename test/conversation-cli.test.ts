@@ -85,6 +85,15 @@ test("runs multiple messages in one persistent conversation", async () => {
         commandAllowlist: ["node"],
         commandTimeoutMs: 1_000,
         maxOutputBytes: 1_000,
+        contextManagement: {
+            maxContextTokens: 16_384,
+            reservedOutputTokens: 2_048,
+            safetyMarginPercent: 10,
+            recentConversationTurns: 4,
+            recentToolExchanges: 6,
+            maxSummaryTokens: 1_200,
+            maxToolResultTokens: 2_048,
+        },
         sourcePath: "codetau.config.json",
         rootDirectory: process.cwd(),
         naturalLanguage: {

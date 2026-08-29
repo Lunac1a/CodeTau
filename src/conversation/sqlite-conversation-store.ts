@@ -5,6 +5,8 @@ import { DatabaseSync } from "node:sqlite";
 import type { ValidationCommand } from "../natural-language/command-line.ts";
 import type {
     Conversation,
+    ConversationSummary,
+    ConversationSummaryContent,
     ConversationStore,
     ConversationTurn,
 } from "./store.ts";
@@ -27,6 +29,54 @@ type TurnRow = {
     created_at: string;
     completed_at: string | null;
 };
+
+type SummaryRow = {
+    summary_id: string;
+    conversation_id: string;
+    through_sequence: number;
+    source_turn_ids_json: string;
+    source_digest: string;
+    summary_json: string;
+    created_at: string;
+};
+
+function stringArray(value: unknown, label: string): readonly string[] {
+    if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+        throw new Error(`Conversation summary ${label} is invalid`);
+    }
+    return value;
+}
+
+function summaryContentFrom(source: string): ConversationSummaryContent {
+    const value = JSON.parse(source) as unknown;
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+        throw new Error("Conversation summary is invalid");
+    }
+    const record = value as Record<string, unknown>;
+    const keys = ["goals", "constraints", "decisions", "verifiedOutcomes", "openItems"];
+    if (Object.keys(record).some((key) => !keys.includes(key))) {
+        throw new Error("Conversation summary has unknown fields");
+    }
+    return {
+        goals: stringArray(record.goals, "goals"),
+        constraints: stringArray(record.constraints, "constraints"),
+        decisions: stringArray(record.decisions, "decisions"),
+        verifiedOutcomes: stringArray(record.verifiedOutcomes, "verifiedOutcomes"),
+        openItems: stringArray(record.openItems, "openItems"),
+    };
+}
+
+function summaryFrom(row: SummaryRow): ConversationSummary {
+    return {
+        id: row.summary_id,
+        conversationId: row.conversation_id,
+        throughSequence: row.through_sequence,
+        sourceTurnIds: stringArray(JSON.parse(row.source_turn_ids_json), "sourceTurnIds"),
+        sourceDigest: row.source_digest,
+        content: summaryContentFrom(row.summary_json),
+        createdAt: row.created_at,
+    };
+}
 
 function validationCommandsFrom(source: string): readonly ValidationCommand[] {
     const parsed = JSON.parse(source) as unknown;
@@ -113,6 +163,17 @@ export class SQLiteConversationStore implements ConversationStore {
                 created_at TEXT NOT NULL,
                 completed_at TEXT,
                 UNIQUE(conversation_id, sequence),
+                FOREIGN KEY(conversation_id) REFERENCES chat_conversations(conversation_id)
+            );
+            CREATE TABLE IF NOT EXISTS chat_summaries (
+                summary_id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL,
+                through_sequence INTEGER NOT NULL,
+                source_turn_ids_json TEXT NOT NULL,
+                source_digest TEXT NOT NULL,
+                summary_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(conversation_id, through_sequence),
                 FOREIGN KEY(conversation_id) REFERENCES chat_conversations(conversation_id)
             );
         `);
@@ -244,6 +305,58 @@ export class SQLiteConversationStore implements ConversationStore {
                  WHERE conversation_id = ? AND status = 'running'`,
             )
             .run(now, conversationId);
+    }
+
+    async loadLatestSummary(
+        conversationId: string,
+    ): Promise<ConversationSummary | undefined> {
+        this.#assertOpen();
+        const rows = this.#database
+            .prepare(
+                `SELECT summary_id, conversation_id, through_sequence,
+                        source_turn_ids_json, source_digest, summary_json, created_at
+                 FROM chat_summaries
+                 WHERE conversation_id = ?
+                 ORDER BY through_sequence DESC`,
+            )
+            .all(conversationId) as unknown as SummaryRow[];
+        for (const row of rows) {
+            try {
+                return summaryFrom(row);
+            } catch {
+                // Summaries are derived caches. Ignore a corrupt row and try an older one.
+            }
+        }
+        return undefined;
+    }
+
+    async appendSummary(summary: ConversationSummary): Promise<void> {
+        this.#assertOpen();
+        if (
+            summary.id.trim() === "" ||
+            summary.conversationId.trim() === "" ||
+            !Number.isSafeInteger(summary.throughSequence) ||
+            summary.throughSequence <= 0 ||
+            !/^[a-f0-9]{64}$/u.test(summary.sourceDigest)
+        ) {
+            throw new Error("Conversation summary metadata is invalid");
+        }
+        this.#database
+            .prepare(
+                `INSERT INTO chat_summaries (
+                    summary_id, conversation_id, through_sequence,
+                    source_turn_ids_json, source_digest, summary_json, created_at
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+                summary.id,
+                summary.conversationId,
+                summary.throughSequence,
+                JSON.stringify(summary.sourceTurnIds),
+                summary.sourceDigest,
+                JSON.stringify(summary.content),
+                summary.createdAt,
+            );
     }
 
     async close(): Promise<void> {

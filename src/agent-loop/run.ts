@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import { ContextManager } from "../context/manager.ts";
+import { ContextBudgetExceededError } from "../context/types.ts";
 import { rebuildTaskState, type TaskState, type TerminalStatus } from "../events.ts";
 import type { ModelMessage, ModelProvider } from "../model.ts";
 import { PermissionPolicy } from "../permissions/policy.ts";
@@ -31,6 +33,7 @@ export type RunAgentLoopOptions = {
     permissionPolicy?: PermissionPolicy;
     approvalResponse?: ApprovalResponse;
     runtime?: AgentLoopRuntime;
+    contextManager?: ContextManager;
 };
 
 type EventWriter = {
@@ -49,6 +52,7 @@ type EventWriter = {
     ): Promise<TaskState>;
     appendFinal(status: TerminalStatus, message: string): Promise<TaskState>;
     rebuild(): Promise<TaskState>;
+    loadEvents(): Promise<readonly AgentEvent[]>;
 };
 
 const defaultRuntime: AgentLoopRuntime = {
@@ -94,6 +98,7 @@ function buildInitialMessages(
                       )),
                 "Execution rules:",
                 "- Inspect the relevant implementation and tests before editing.",
+                "- For large files or compacted read results, call read_file with startLine/endLine and re-read the exact source range before patching.",
                 "- Fix the implementation. Do not weaken or rewrite acceptance tests unless the task explicitly requires a test change.",
                 "- For apply_patch, copy oldText exactly from the latest read_file result, including the original quote or backtick delimiters.",
                 "- newText must contain source code only. Never copy test output, stack traces, or validation logs into a patch.",
@@ -316,30 +321,21 @@ function toolCallSignature(call: ToolCall): string {
     return `${call.name}:${JSON.stringify(canonicalJsonValue(call.input))}`;
 }
 
-function failedToolCallCounts(messages: readonly ModelMessage[]): Map<string, number> {
+function failedToolCallCounts(events: readonly AgentEvent[]): Map<string, number> {
     const signatures = new Map<string, string>();
     const counts = new Map<string, number>();
-    for (const message of messages) {
-        if (message.role === "assistant" && "toolCalls" in message) {
-            for (const call of message.toolCalls) {
-                signatures.set(call.id, toolCallSignature(call));
-            }
+    for (const event of events) {
+        if (event.type === "model_tool_call") {
+            signatures.set(event.toolCall.id, toolCallSignature(event.toolCall));
             continue;
         }
-        if (message.role !== "tool") {
-            continue;
-        }
-        const signature = signatures.get(message.toolCallId);
+        if (event.type !== "tool_result") continue;
+        const signature = signatures.get(event.toolCallId);
         if (signature === undefined) {
             continue;
         }
-        try {
-            const parsed = JSON.parse(message.content) as { ok?: unknown };
-            if (parsed.ok === false) {
-                counts.set(signature, (counts.get(signature) ?? 0) + 1);
-            }
-        } catch {
-            // Historical non-JSON tool messages cannot contribute to loop detection.
+        if (!event.result.ok) {
+            counts.set(signature, (counts.get(signature) ?? 0) + 1);
         }
     }
     return counts;
@@ -410,6 +406,10 @@ function createEventWriter(options: {
         return rebuildTaskState(await eventStore.loadSession(sessionId));
     }
 
+    async function loadEvents(): Promise<readonly AgentEvent[]> {
+        return eventStore.loadSession(sessionId);
+    }
+
     async function finalize(
         terminalStatus: TerminalStatus,
         message: string,
@@ -420,7 +420,15 @@ function createEventWriter(options: {
         return appendFinal(terminalStatus, message);
     }
 
-    return { append, nextBase, changeState, finalize, appendFinal, rebuild };
+    return {
+        append,
+        nextBase,
+        changeState,
+        finalize,
+        appendFinal,
+        rebuild,
+        loadEvents,
+    };
 }
 
 async function finalizeModelResponse(
@@ -505,6 +513,7 @@ async function continueModelLoop(options: {
     validationTracker: ValidationTracker;
     initialModelTurns: number;
     initialToolCalls: number;
+    contextManager: ContextManager;
 }): Promise<TaskState> {
     const {
         spec,
@@ -514,10 +523,11 @@ async function continueModelLoop(options: {
         toolRegistry,
         permissionPolicy,
         validationTracker,
+        contextManager,
     } = options;
     let modelTurns = options.initialModelTurns;
     let toolCalls = options.initialToolCalls;
-    const failedCalls = failedToolCallCounts(messages);
+    const failedCalls = failedToolCallCounts(await writer.loadEvents());
 
     while (true) {
         if (modelTurns >= spec.contract.budget.maxModelTurns) {
@@ -537,25 +547,55 @@ async function continueModelLoop(options: {
 
         modelTurns += 1;
         let response: ModelResponse;
+        let compiled: ReturnType<ContextManager["compile"]> | undefined;
         try {
+            const definitions = toolRegistry.definitions();
+            compiled = contextManager.compile({
+                messages,
+                availableTools: definitions,
+                mode: "agent",
+                requiredPrefixMessages: 2,
+            });
+            await writer.append({
+                ...writer.nextBase(),
+                type: "context_compiled",
+                estimatedInputTokens: compiled.estimatedInputTokens,
+                effectiveInputLimit: compiled.effectiveInputLimit,
+                digest: compiled.digest,
+                operations: compiled.operations,
+                sections: compiled.sections,
+            });
             response = await model.generate({
-                messages: [...messages],
-                availableTools: toolRegistry.definitions(),
+                messages: [...compiled.messages],
+                availableTools: definitions,
             });
         } catch (error) {
+            const contextFailure = error instanceof ContextBudgetExceededError;
             const errorEvent = await writer.append({
                 ...writer.nextBase(),
                 type: "model_error",
                 error: {
-                    code: "model_provider_error",
-                    message: safeErrorMessage(error),
+                    code: contextFailure
+                        ? "context_budget_exceeded"
+                        : "model_provider_error",
+                    message: contextFailure
+                        ? error.message
+                        : `${safeErrorMessage(error)}${
+                              compiled === undefined
+                                  ? ""
+                                  : ` Context estimate: ${compiled.estimatedInputTokens}/${compiled.effectiveInputLimit}.`
+                          }`,
                 },
             });
             return writer.finalize(
                 "failed",
-                "The model provider failed.",
+                contextFailure
+                    ? "Context budget exceeded."
+                    : "The model provider failed.",
                 errorEvent.id,
-                "The model provider returned an error.",
+                contextFailure
+                    ? "Required context could not fit without dropping pinned instructions."
+                    : "The model provider returned an error.",
             );
         }
 
@@ -857,6 +897,7 @@ async function resolveApprovedToolCall(options: {
 
 export async function runAgentLoop(options: RunAgentLoopOptions): Promise<TaskState> {
     const runtime = options.runtime ?? defaultRuntime;
+    const contextManager = options.contextManager ?? new ContextManager();
     const toolRegistry = options.toolRegistry ?? new ToolRegistry();
     const permissionPolicy =
         options.permissionPolicy ?? new PermissionPolicy(options.spec.contract);
@@ -911,11 +952,13 @@ export async function runAgentLoop(options: RunAgentLoopOptions): Promise<TaskSt
         validationTracker,
         initialModelTurns: 0,
         initialToolCalls: 0,
+        contextManager,
     });
 }
 
 export async function resumeAgentLoop(options: RunAgentLoopOptions): Promise<TaskState> {
     const runtime = options.runtime ?? defaultRuntime;
+    const contextManager = options.contextManager ?? new ContextManager();
     const toolRegistry = options.toolRegistry ?? new ToolRegistry();
     const permissionPolicy =
         options.permissionPolicy ?? new PermissionPolicy(options.spec.contract);
@@ -1059,6 +1102,7 @@ export async function resumeAgentLoop(options: RunAgentLoopOptions): Promise<Tas
             validationTracker,
             initialModelTurns: countModelTurns(events),
             initialToolCalls: countToolCalls(events),
+            contextManager,
         });
     }
 
@@ -1159,5 +1203,6 @@ export async function resumeAgentLoop(options: RunAgentLoopOptions): Promise<Tas
         validationTracker,
         initialModelTurns: countModelTurns(events),
         initialToolCalls: countToolCalls(events),
+        contextManager,
     });
 }

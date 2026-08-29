@@ -1,6 +1,7 @@
 import { createInterface, type Interface } from "node:readline";
 
 import type { CodeTauConfig } from "../../src/config/loader.ts";
+import type { ContextManagementConfig } from "../../src/context/types.ts";
 import {
     formatValidationCommand,
     parseValidationCommand,
@@ -41,9 +42,14 @@ export interface ConversationUI extends NaturalLanguageUI {
         conversationId: string;
         resumed: boolean;
         completedTurns: number;
+        contextBudget: ContextManagementConfig;
     }): void;
     readConversationMessage(): Promise<string | undefined>;
     renderAssistantReply(message: string): void;
+    renderContextStatus?(options: {
+        summarized: boolean;
+        omittedTurns: number;
+    }): void;
 }
 
 export class TerminalUI implements ConversationUI {
@@ -126,6 +132,7 @@ export class TerminalUI implements ConversationUI {
         conversationId: string;
         resumed: boolean;
         completedTurns: number;
+        contextBudget: ContextManagementConfig;
     }): void {
         this.#output.write(
             [
@@ -133,6 +140,7 @@ export class TerminalUI implements ConversationUI {
                 "┌─ CodeTau ─────────────────────────────────────────┐",
                 `│ ${options.resumed ? "Resumed" : "New"} conversation: ${terminalSafe(options.conversationId)}`,
                 `│ Completed turns: ${options.completedTurns}`,
+                `│ Context: ${options.contextBudget.maxContextTokens} tokens (${options.contextBudget.reservedOutputTokens} reserved, ${options.contextBudget.safetyMarginPercent}% margin)`,
                 "│ Enter a message, :multi for multiline input, :exit to leave.",
                 "└───────────────────────────────────────────────────┘",
                 "",
@@ -166,6 +174,19 @@ export class TerminalUI implements ConversationUI {
             }
             lines.push(line);
         }
+    }
+
+    renderContextStatus(options: {
+        summarized: boolean;
+        omittedTurns: number;
+    }): void {
+        if (!options.summarized && options.omittedTurns === 0) return;
+        const summary = options.summarized
+            ? "rolling summary active"
+            : "summary unavailable";
+        this.#output.write(
+            `${this.paint("◇", "36")} Context: ${summary}; ${options.omittedTurns} older turn(s) represented or omitted.\n`,
+        );
     }
 
     renderAssistantReply(message: string): void {
@@ -296,6 +317,18 @@ export class TerminalUI implements ConversationUI {
             if (this.#verbose) {
                 this.#output.write(
                     `${this.paint("●", "36")} ${terminalSafe(event.text.trim())}\n`,
+                );
+            }
+        } else if (event.type === "context_compiled") {
+            if (this.#verbose || event.operations.length > 0) {
+                const actions =
+                    event.operations.length === 0
+                        ? "no compaction"
+                        : event.operations
+                              .map((operation) => `${operation.kind}=${operation.count}`)
+                              .join(", ");
+                this.#output.write(
+                    `${this.paint("◇", "36")} Context ${event.estimatedInputTokens}/${event.effectiveInputLimit} estimated tokens; ${actions}\n`,
                 );
             }
         }

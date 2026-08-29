@@ -7,6 +7,7 @@ import {
     runAgentLoop,
     type AgentLoopRuntime,
 } from "../src/agent-loop/run.ts";
+import { ContextManager } from "../src/context/manager.ts";
 import { InMemoryEventStore } from "../src/persistence/in-memory-event-store.ts";
 import type { LoadedSpec } from "../src/spec/types.ts";
 import { ToolRegistry } from "../src/tools/registry.ts";
@@ -64,7 +65,9 @@ test("runs multiple model turns and records a blocked terminal state", async () 
             [
                 "session_started",
                 "state_changed",
+                "context_compiled",
                 "model_text",
+                "context_compiled",
                 "model_finish",
                 "state_changed",
                 "final",
@@ -257,7 +260,7 @@ test("resumes an analyzing session with rebuilt message history", async () => {
         const events = await store.loadSession("session-resume");
 
         assert.equal(state.status, "blocked");
-        assert.equal(events.at(-1)?.sequence, 6);
+        assert.equal(events.at(-1)?.sequence, 7);
         assert.equal(
             model.requests[0].messages.at(-1)?.content,
             "This analysis happened before the interruption.",
@@ -547,6 +550,41 @@ test("resume automatically completes current passing validation evidence", async
         assert.equal(state.status, "completed");
         assert.equal(model.requests.length, 0);
         assert.equal(state.final?.message, "The task completed automatically after all acceptance commands passed.");
+    } finally {
+        await store.close();
+    }
+});
+
+test("fails before calling the provider when pinned context exceeds budget", async () => {
+    const store = new InMemoryEventStore();
+    const model = new FakeModelProvider([]);
+    try {
+        const state = await runAgentLoop({
+            sessionId: "session-context-overflow",
+            spec: createTestSpec({ context: "required ".repeat(1_000) }),
+            model,
+            eventStore: store,
+            runtime: createRuntime("context-event"),
+            contextManager: new ContextManager({
+                maxContextTokens: 500,
+                reservedOutputTokens: 100,
+                safetyMarginPercent: 0,
+                recentConversationTurns: 4,
+                recentToolExchanges: 6,
+                maxSummaryTokens: 100,
+                maxToolResultTokens: 100,
+            }),
+        });
+        assert.equal(state.status, "failed");
+        assert.equal(model.requests.length, 0);
+        const events = await store.loadSession("session-context-overflow");
+        assert.ok(
+            events.some(
+                (event) =>
+                    event.type === "model_error" &&
+                    event.error.code === "context_budget_exceeded",
+            ),
+        );
     } finally {
         await store.close();
     }

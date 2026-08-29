@@ -106,6 +106,21 @@ export type AgentEvent =
         readonly limit: number;
       })
     | (EventBase & {
+          readonly type: "context_compiled";
+          readonly estimatedInputTokens: number;
+          readonly effectiveInputLimit: number;
+          readonly digest: string;
+          readonly operations: readonly Readonly<{
+              kind: "checkpoint" | "tool_result_compacted" | "history_omitted";
+              count: number;
+          }>[];
+          readonly sections: readonly Readonly<{
+              kind: "pinned" | "checkpoint" | "recent" | "tools";
+              estimatedTokens: number;
+              sourceCount: number;
+          }>[];
+      })
+    | (EventBase & {
         readonly type: "tool_result";
         readonly toolCallId: string;
         readonly result: ToolResult;

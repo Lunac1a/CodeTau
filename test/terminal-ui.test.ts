@@ -99,6 +99,15 @@ test("reads single-line and multiline conversation messages", async () => {
             conversationId: "conversation-1",
             resumed: false,
             completedTurns: 0,
+            contextBudget: {
+                maxContextTokens: 16_384,
+                reservedOutputTokens: 2_048,
+                safetyMarginPercent: 10,
+                recentConversationTurns: 4,
+                recentToolExchanges: 6,
+                maxSummaryTokens: 1_200,
+                maxToolResultTokens: 2_048,
+            },
         });
         const first = ui.readConversationMessage();
         input.write("fix the greeting\n");

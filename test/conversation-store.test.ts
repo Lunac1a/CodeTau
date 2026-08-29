@@ -49,6 +49,26 @@ test("persists conversations and ordered turns", async () => {
         );
         assert.equal(turns[0]?.assistantMessage, "Fixed and verified.");
         assert.match(turns[1]?.assistantMessage ?? "", /process ended/u);
+
+        await store.appendSummary({
+            id: "summary-1",
+            conversationId: conversation.id,
+            throughSequence: 1,
+            sourceTurnIds: ["turn-1"],
+            sourceDigest: "a".repeat(64),
+            content: {
+                goals: ["Fix the greeting"],
+                constraints: [],
+                decisions: [],
+                verifiedOutcomes: ["Validation passed"],
+                openItems: [],
+            },
+            createdAt: "2026-08-25T00:05:00.000Z",
+        });
+        const summary = await store.loadLatestSummary(conversation.id);
+        assert.equal(summary?.throughSequence, 1);
+        assert.deepEqual(summary?.content.goals, ["Fix the greeting"]);
+        assert.equal(await store.loadLatestSummary("other-conversation"), undefined);
     } finally {
         await store.close();
     }

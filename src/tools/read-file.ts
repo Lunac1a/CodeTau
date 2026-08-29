@@ -1,16 +1,38 @@
 import { open } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { createInterface } from "node:readline";
 
 import type { ToolResult } from "../types.ts";
 import { WorkspaceSandboxError } from "../workspace/errors.ts";
 import type { WorkspaceSandbox } from "../workspace/sandbox.ts";
 import type { AgentTool } from "./tool.ts";
 
-function readPath(input: unknown): string | undefined {
+function readInput(input: unknown):
+    | { path: string; startLine?: number; endLine?: number }
+    | undefined {
     if (typeof input !== "object" || input === null || Array.isArray(input)) {
         return undefined;
     }
     const path = Reflect.get(input, "path");
-    return typeof path === "string" ? path : undefined;
+    const startLine = Reflect.get(input, "startLine");
+    const endLine = Reflect.get(input, "endLine");
+    if (
+        typeof path !== "string" ||
+        (startLine !== undefined &&
+            (!Number.isSafeInteger(startLine) || (startLine as number) < 1)) ||
+        (endLine !== undefined &&
+            (!Number.isSafeInteger(endLine) || (endLine as number) < 1)) ||
+        (startLine !== undefined &&
+            endLine !== undefined &&
+            (endLine as number) < (startLine as number))
+    ) {
+        return undefined;
+    }
+    return {
+        path,
+        ...(startLine === undefined ? {} : { startLine: startLine as number }),
+        ...(endLine === undefined ? {} : { endLine: endLine as number }),
+    };
 }
 
 export class ReadFileTool implements AgentTool {
@@ -22,6 +44,16 @@ export class ReadFileTool implements AgentTool {
             path: {
                 type: "string",
                 description: "Workspace-relative file path.",
+            },
+            startLine: {
+                type: "integer",
+                minimum: 1,
+                description: "Optional 1-based first line to return.",
+            },
+            endLine: {
+                type: "integer",
+                minimum: 1,
+                description: "Optional inclusive 1-based last line to return.",
             },
         },
         required: ["path"],
@@ -37,18 +69,20 @@ export class ReadFileTool implements AgentTool {
     }
 
     async execute(input: unknown): Promise<ToolResult> {
-        const requestedPath = readPath(input);
-        if (requestedPath === undefined) {
+        const parsed = readInput(input);
+        if (parsed === undefined) {
             return {
                 ok: false,
                 error: {
                     code: "tool_input_invalid",
-                    message: "read_file input must contain a string path",
+                    message:
+                        "read_file input must contain a string path and a valid optional startLine/endLine range",
                 },
             };
         }
 
         try {
+            const requestedPath = parsed.path;
             const resolved = await this.sandbox.resolveExistingPath(requestedPath);
             const handle = await open(resolved.absolutePath, "r");
             try {
@@ -62,12 +96,72 @@ export class ReadFileTool implements AgentTool {
                         },
                     };
                 }
-                if (stats.size > this.maxBytes) {
+                const ranged =
+                    parsed.startLine !== undefined || parsed.endLine !== undefined;
+                if (!ranged && stats.size > this.maxBytes) {
                     return {
                         ok: false,
                         error: {
                             code: "file_too_large",
                             message: `File exceeds the ${this.maxBytes} byte read limit: ${requestedPath}`,
+                        },
+                    };
+                }
+
+                if (ranged) {
+                    await handle.close();
+                    const startLine = parsed.startLine ?? 1;
+                    const requestedEnd = parsed.endLine ?? Number.MAX_SAFE_INTEGER;
+                    const selected: string[] = [];
+                    let totalLines = 0;
+                    let selectedBytes = 0;
+                    const lines = createInterface({
+                        input: createReadStream(resolved.absolutePath, {
+                            encoding: "utf8",
+                        }),
+                        crlfDelay: Infinity,
+                    });
+                    for await (const line of lines) {
+                        totalLines += 1;
+                        if (totalLines < startLine || totalLines > requestedEnd) {
+                            continue;
+                        }
+                        const additionalBytes =
+                            Buffer.byteLength(line, "utf8") +
+                            (selected.length === 0 ? 0 : 1);
+                        if (selectedBytes + additionalBytes > this.maxBytes) {
+                            lines.close();
+                            return {
+                                ok: false,
+                                error: {
+                                    code: "file_too_large",
+                                    message: `Selected line range exceeds the ${this.maxBytes} byte read limit: ${requestedPath}`,
+                                },
+                            };
+                        }
+                        selected.push(line);
+                        selectedBytes += additionalBytes;
+                    }
+                    if (startLine > totalLines && !(startLine === 1 && totalLines === 0)) {
+                        return {
+                            ok: false,
+                            error: {
+                                code: "line_range_invalid",
+                                message: `startLine ${startLine} exceeds the file's ${totalLines} lines: ${requestedPath}`,
+                            },
+                        };
+                    }
+                    const actualEnd = Math.min(requestedEnd, totalLines);
+                    return {
+                        ok: true,
+                        output: {
+                            path: resolved.relativePath,
+                            content: selected.join("\n"),
+                            bytes: selectedBytes,
+                            startLine,
+                            endLine: actualEnd,
+                            totalLines,
+                            truncated: startLine > 1 || actualEnd < totalLines,
                         },
                     };
                 }
@@ -98,7 +192,7 @@ export class ReadFileTool implements AgentTool {
                     },
                 };
             } finally {
-                await handle.close();
+                await handle.close().catch(() => undefined);
             }
         } catch (error) {
             if (error instanceof WorkspaceSandboxError) {

@@ -11,6 +11,7 @@
     { "$ref": "#/$defs/modelFinish" },
     { "$ref": "#/$defs/modelError" },
     { "$ref": "#/$defs/budgetExhausted" },
+    { "$ref": "#/$defs/contextCompiled" },
     { "$ref": "#/$defs/toolResult" },
     { "$ref": "#/$defs/approvalResolved" },
     { "$ref": "#/$defs/final" }
@@ -176,6 +177,48 @@
             "type": { "const": "budget_exhausted" },
             "budget": { "enum": ["model_turns", "tool_calls", "retries"] },
             "limit": { "type": "integer", "minimum": 0 }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "contextCompiled": {
+      "type": "object",
+      "allOf": [
+        { "$ref": "#/$defs/eventBase" },
+        {
+          "type": "object",
+          "required": ["estimatedInputTokens", "effectiveInputLimit", "digest", "operations", "sections"],
+          "properties": {
+            "type": { "const": "context_compiled" },
+            "estimatedInputTokens": { "type": "integer", "minimum": 0 },
+            "effectiveInputLimit": { "type": "integer", "minimum": 1 },
+            "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "operations": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "count"],
+                "properties": {
+                  "kind": { "enum": ["checkpoint", "tool_result_compacted", "history_omitted"] },
+                  "count": { "type": "integer", "minimum": 0 }
+                }
+              }
+            },
+            "sections": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "estimatedTokens", "sourceCount"],
+                "properties": {
+                  "kind": { "enum": ["pinned", "checkpoint", "recent", "tools"] },
+                  "estimatedTokens": { "type": "integer", "minimum": 0 },
+                  "sourceCount": { "type": "integer", "minimum": 0 }
+                }
+              }
+            }
           }
         }
       ],

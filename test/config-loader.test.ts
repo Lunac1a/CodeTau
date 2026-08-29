@@ -29,12 +29,66 @@ test("loads configuration and resolves its database from the config directory", 
         assert.equal(config.rootDirectory, directory);
         assert.equal(config.databasePath, join(directory, ".codetau", "session.db"));
         assert.equal(config.model, "qwen2.5-7b-instruct");
+        assert.deepEqual(config.contextManagement, {
+            maxContextTokens: 16_384,
+            reservedOutputTokens: 2_048,
+            safetyMarginPercent: 10,
+            recentConversationTurns: 4,
+            recentToolExchanges: 6,
+            maxSummaryTokens: 1_200,
+            maxToolResultTokens: 2_048,
+        });
         assert.deepEqual(config.naturalLanguage, {
             maxModelTurns: 20,
             maxToolCalls: 60,
             maxRetries: 3,
             additionalProtectedPaths: [],
         });
+    } finally {
+        await rm(directory, { recursive: true, force: true });
+    }
+});
+
+test("loads and validates context-management overrides", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "codetau-config-context-"));
+    const path = join(directory, "codetau.config.json");
+    const base = {
+        database: "db.sqlite",
+        model: "model",
+        baseUrl: "http://localhost:1234/v1",
+        commandAllowlist: ["node"],
+        commandTimeoutMs: 1000,
+        maxOutputBytes: 1000,
+    };
+    try {
+        await writeFile(
+            path,
+            JSON.stringify({
+                ...base,
+                contextManagement: {
+                    maxContextTokens: 8_192,
+                    reservedOutputTokens: 1_024,
+                },
+            }),
+            "utf8",
+        );
+        const config = await loadCodeTauConfig(path);
+        assert.equal(config.contextManagement.maxContextTokens, 8_192);
+        assert.equal(config.contextManagement.reservedOutputTokens, 1_024);
+        assert.equal(config.contextManagement.recentConversationTurns, 4);
+
+        await writeFile(
+            path,
+            JSON.stringify({
+                ...base,
+                contextManagement: {
+                    maxContextTokens: 1_000,
+                    reservedOutputTokens: 1_000,
+                },
+            }),
+            "utf8",
+        );
+        await assert.rejects(loadCodeTauConfig(path), ConfigLoadError);
     } finally {
         await rm(directory, { recursive: true, force: true });
     }

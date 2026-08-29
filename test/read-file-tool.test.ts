@@ -64,3 +64,49 @@ test("enforces the configured byte limit", async () => {
         await rm(directory, { recursive: true, force: true });
     }
 });
+
+test("reads a 1-based line range with UTF-8 metadata", async () => {
+    const { directory, tool } = await createTool();
+    try {
+        await writeFile(
+            join(directory, "src", "lines.txt"),
+            "alpha\nβ\n三\nomega\n",
+            "utf8",
+        );
+        assert.deepEqual(
+            await tool.execute({
+                path: "src/lines.txt",
+                startLine: 2,
+                endLine: 3,
+            }),
+            {
+                ok: true,
+                output: {
+                    path: "src/lines.txt",
+                    content: "β\n三",
+                    bytes: 6,
+                    startLine: 2,
+                    endLine: 3,
+                    totalLines: 4,
+                    truncated: true,
+                },
+            },
+        );
+        assert.equal(
+            (await tool.execute({ path: "src/lines.txt", startLine: 5 })).ok,
+            false,
+        );
+        assert.equal(
+            (
+                await tool.execute({
+                    path: "src/lines.txt",
+                    startLine: 3,
+                    endLine: 2,
+                })
+            ).ok,
+            false,
+        );
+    } finally {
+        await rm(directory, { recursive: true, force: true });
+    }
+});

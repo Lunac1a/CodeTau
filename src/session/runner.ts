@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 
 import { resumeAgentLoop, runAgentLoop } from "../agent-loop/run.ts";
 import type { CodeTauConfig } from "../config/loader.ts";
+import { ContextManager } from "../context/manager.ts";
 import type { TaskState } from "../events.ts";
 import type { ModelProvider } from "../model.ts";
 import type { EventStore } from "../persistence/event-store.ts";
@@ -52,6 +53,7 @@ export class SessionRunner implements SessionRunnerLike {
     readonly #eventStore: EventStore;
     readonly #model: ModelProvider;
     readonly #nextSessionId: () => string;
+    readonly #contextManager: ContextManager;
 
     constructor(options: SessionRunnerOptions) {
         this.#config = options.config;
@@ -64,6 +66,7 @@ export class SessionRunner implements SessionRunnerLike {
                 apiKey: process.env.CODETAU_MODEL_API_KEY,
             });
         this.#nextSessionId = options.nextSessionId ?? randomUUID;
+        this.#contextManager = new ContextManager(options.config.contextManagement);
     }
 
     async run(options: RunSessionOptions): Promise<TaskState> {
@@ -80,6 +83,7 @@ export class SessionRunner implements SessionRunnerLike {
             model: this.#model,
             eventStore: this.#eventStore,
             toolRegistry,
+            contextManager: this.#contextManager,
         });
     }
 
@@ -102,6 +106,7 @@ export class SessionRunner implements SessionRunnerLike {
             eventStore: this.#eventStore,
             toolRegistry,
             approvalResponse: options.approvalResponse,
+            contextManager: this.#contextManager,
         });
     }
 

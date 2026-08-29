@@ -23,7 +23,9 @@ The project boundary and validation commands are confirmed once per new
 conversation. Each user message creates a separate Agent Session with its own
 approvals, event history, file changes, and current validation evidence. Earlier
 completed turns are supplied as context to later turns, while the workspace is
-re-inspected on every turn.
+re-inspected on every turn. When that history no longer fits the configured
+budget, CodeTau persists a source-digested structured summary and keeps recent
+turns verbatim. Raw turns and Agent events remain the authoritative record.
 
 Pass a task directly when scripting. `--validate` may be repeated and `--yes`
 accepts the displayed preflight defaults without a prompt:
@@ -61,5 +63,8 @@ permission policy, and Agent Loop through the Session Runner. `resume` reloads
 the original Spec path recorded by the Session. Natural-language Sessions keep
 their generated, validated Spec snapshot in the event stream so they can resume
 without writing a task file into the workspace. Conversations and their turn-to-
-Session mapping are persisted in the same SQLite database without changing the
-event stream format.
+Session mapping and derived summaries are persisted in the same SQLite database.
+`contextManagement` in `codetau.config.json` controls the model window, output
+reserve, safety margin, recent-turn/tool windows, and summary/tool-result limits.
+The field is optional and defaults to a 16,384-token context window with 2,048
+tokens reserved for output.

@@ -1,4 +1,5 @@
 import type { ModelProvider } from "../model.ts";
+import { ContextManager } from "../context/manager.ts";
 import type { SessionReport } from "../session/report.ts";
 import type { AgentEvent } from "../types.ts";
 import type { ConversationTurn } from "./store.ts";
@@ -63,6 +64,8 @@ export async function generateConversationReply(options: {
     turns: readonly ConversationTurn[];
     report: SessionReport;
     events: readonly AgentEvent[];
+    contextManager?: ContextManager;
+    conversationContext?: string;
 }): Promise<string> {
     const validationComplete =
         options.report.validationCount > 0 &&
@@ -72,12 +75,13 @@ export async function generateConversationReply(options: {
         return fallbackConversationReply(options.report);
     }
 
-    const history = conversationHistoryContext(options.turns, options.userMessage);
+    const history =
+        options.conversationContext ??
+        conversationHistoryContext(options.turns, options.userMessage);
     const evidence = executionEvidence(options.events);
-    const response = await options.model.generate({
-        messages: [
+    const messages = [
             {
-                role: "system",
+                role: "system" as const,
                 content: [
                     "You are the conversational response layer for CodeTau CLI.",
                     "Answer the user's latest message using only the supplied conversation and execution evidence.",
@@ -87,7 +91,7 @@ export async function generateConversationReply(options: {
                 ].join("\n"),
             },
             {
-                role: "user",
+                role: "user" as const,
                 content: [
                     history,
                     `Turn status: ${options.report.status}`,
@@ -97,7 +101,14 @@ export async function generateConversationReply(options: {
                     `Execution evidence:\n${evidence || "No detailed event evidence."}`,
                 ].join("\n\n"),
             },
-        ],
+        ];
+    const compiled = (options.contextManager ?? new ContextManager()).compile({
+        messages,
+        availableTools: [],
+        mode: "required",
+    });
+    const response = await options.model.generate({
+        messages: compiled.messages,
         availableTools: [],
         includeFinishTool: false,
     });

@@ -19,6 +19,24 @@ export type ConversationTurn = Readonly<{
     completedAt?: string;
 }>;
 
+export type ConversationSummaryContent = Readonly<{
+    goals: readonly string[];
+    constraints: readonly string[];
+    decisions: readonly string[];
+    verifiedOutcomes: readonly string[];
+    openItems: readonly string[];
+}>;
+
+export type ConversationSummary = Readonly<{
+    id: string;
+    conversationId: string;
+    throughSequence: number;
+    sourceTurnIds: readonly string[];
+    sourceDigest: string;
+    content: ConversationSummaryContent;
+    createdAt: string;
+}>;
+
 export interface ConversationStore {
     createConversation(options: {
         id: string;
@@ -41,5 +59,7 @@ export interface ConversationStore {
         now: string;
     }): Promise<void>;
     failOpenTurns(conversationId: string, now: string): Promise<void>;
+    loadLatestSummary(conversationId: string): Promise<ConversationSummary | undefined>;
+    appendSummary(summary: ConversationSummary): Promise<void>;
     close(): Promise<void>;
 }

@@ -1,6 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
+import {
+    DEFAULT_CONTEXT_MANAGEMENT_CONFIG,
+} from "../context/manager.ts";
+import type { ContextManagementConfig } from "../context/types.ts";
 import { ConfigLoadError } from "./errors.ts";
 
 export type CodeTauConfig = Readonly<{
@@ -12,6 +16,7 @@ export type CodeTauConfig = Readonly<{
     maxOutputBytes: number;
     sourcePath: string;
     rootDirectory: string;
+    contextManagement: ContextManagementConfig;
     naturalLanguage: Readonly<{
         maxModelTurns: number;
         maxToolCalls: number;
@@ -26,6 +31,71 @@ const NATURAL_LANGUAGE_DEFAULTS = {
     maxRetries: 3,
     additionalProtectedPaths: [] as readonly string[],
 };
+
+function parseContextManagement(
+    value: unknown,
+    sourcePath: string,
+): ContextManagementConfig {
+    if (value === undefined) return DEFAULT_CONTEXT_MANAGEMENT_CONFIG;
+    if (!isRecord(value)) {
+        invalidShape(sourcePath, "Configuration contextManagement must be an object");
+    }
+    const allowedKeys = new Set(Object.keys(DEFAULT_CONTEXT_MANAGEMENT_CONFIG));
+    const unknownKey = Object.keys(value).find((key) => !allowedKeys.has(key));
+    if (unknownKey !== undefined) {
+        invalidShape(
+            sourcePath,
+            `Unknown contextManagement configuration field: ${unknownKey}`,
+        );
+    }
+    const parsed = {
+        ...DEFAULT_CONTEXT_MANAGEMENT_CONFIG,
+        ...value,
+    } as Record<keyof ContextManagementConfig, unknown>;
+    for (const key of [
+        "maxContextTokens",
+        "reservedOutputTokens",
+        "recentConversationTurns",
+        "recentToolExchanges",
+        "maxSummaryTokens",
+        "maxToolResultTokens",
+    ] as const) {
+        if (!positiveInteger(parsed[key])) {
+            invalidShape(sourcePath, `contextManagement.${key} must be positive`);
+        }
+    }
+    if (
+        !nonNegativeInteger(parsed.safetyMarginPercent) ||
+        (parsed.safetyMarginPercent as number) >= 100
+    ) {
+        invalidShape(
+            sourcePath,
+            "contextManagement.safetyMarginPercent must be between 0 and 99",
+        );
+    }
+    if (
+        (parsed.reservedOutputTokens as number) >=
+        (parsed.maxContextTokens as number)
+    ) {
+        invalidShape(
+            sourcePath,
+            "contextManagement.reservedOutputTokens must be less than maxContextTokens",
+        );
+    }
+    if (
+        Math.floor(
+            ((parsed.maxContextTokens as number) -
+                (parsed.reservedOutputTokens as number)) *
+                (1 - (parsed.safetyMarginPercent as number) / 100),
+        ) < 1
+    ) {
+        invalidShape(
+            sourcePath,
+            "contextManagement leaves no effective input budget",
+        );
+    }
+    return parsed as ContextManagementConfig;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -120,6 +190,7 @@ function parseConfig(value: unknown, sourcePath: string): CodeTauConfig {
         "commandAllowlist",
         "commandTimeoutMs",
         "maxOutputBytes",
+        "contextManagement",
         "naturalLanguage",
     ]);
     const unknownKey = Object.keys(value).find((key) => !allowedKeys.has(key));
@@ -167,6 +238,7 @@ function parseConfig(value: unknown, sourcePath: string): CodeTauConfig {
         maxOutputBytes: value.maxOutputBytes,
         sourcePath,
         rootDirectory,
+        contextManagement: parseContextManagement(value.contextManagement, sourcePath),
         naturalLanguage: parseNaturalLanguage(value.naturalLanguage, sourcePath),
     };
 }

@@ -57,7 +57,8 @@ implemented and tested. A task can reach `completed` only after every Spec
 acceptance command has current passing evidence. Phase 4 currently includes an
 OpenAI-compatible Model Provider configured for local LM Studio, a Session
 Runner that assembles the runtime dependencies, persistent CLI conversations,
-CLI `ask`, `run`, `resume`, and `status` commands, and CodeTau-Bench Mini with
+an auditable Context Manager with rolling summaries and event-derived execution
+checkpoints, CLI `ask`, `run`, `resume`, and `status` commands, and CodeTau-Bench Mini with
 isolated repeated runs and pass@k reporting. Phase 4.1 reliability hardening keeps repeated Bench prompts
 identical, grounds the model with the complete acceptance contract, adds
 tool-error recovery guidance, stops identical failed-call loops, and reports

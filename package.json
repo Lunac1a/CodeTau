@@ -11,11 +11,13 @@
     "bench": "node --experimental-strip-types --experimental-sqlite packages/bench/main.ts",
     "cli": "node --experimental-strip-types --experimental-sqlite apps/cli/main.ts",
     "model:smoke": "node --experimental-strip-types scripts/smoke-lm-studio.ts",
+    "context:smoke": "node --experimental-strip-types --experimental-sqlite scripts/smoke-context.ts",
     "tau:smoke": "node --experimental-strip-types scripts/smoke-tau.ts",
     "tau:run": "node --experimental-strip-types scripts/run-tau.ts",
     "test": "node --experimental-strip-types --experimental-sqlite --test --test-isolation=none test/state.test.ts test/model.test.ts test/openai-compatible-provider.test.ts test/config-loader.test.ts test/natural-language-task.test.ts test/bench-manifest.test.ts test/bench-metrics.test.ts test/bench-runner.test.ts test/bench-task-definitions.test.ts test/tau-bridge-protocol.test.ts test/tau-bridge-client.test.ts test/tau-session-adapter.test.ts test/tau-policy-verifier.test.ts test/tau-report.test.ts test/tau-cli.test.ts test/tau-runner.test.ts test/spec-schema.test.ts test/spec-digest.test.ts test/spec-loader.test.ts test/event-validation.test.ts test/event-replay.test.ts test/in-memory-event-store.test.ts test/sqlite-event-store.test.ts test/task-state-snapshot.test.ts test/jsonl.test.ts test/agent-loop.test.ts test/agent-loop-tools.test.ts test/session-runner.test.ts test/session-report.test.ts test/tool-registry.test.ts test/permission-policy.test.ts test/workspace-sandbox.test.ts test/read-file-tool.test.ts test/list-files-tool.test.ts test/create-file-tool.test.ts test/structured-patch.test.ts test/apply-patch-tool.test.ts test/apply-patch-loop.test.ts test/run-validation-tool.test.ts test/validation-tracker.test.ts test/phase-two-acceptance.test.ts test/phase-three-acceptance.test.ts test/cli-args.test.ts test/cli-status.test.ts test/cli-main.test.ts test/natural-language-cli.test.ts test/terminal-ui.test.ts test/conversation-store.test.ts test/conversation-reply.test.ts test/conversation-cli.test.ts",
+    "test:context": "node --experimental-strip-types --experimental-sqlite --test --test-isolation=none test/context-manager.test.ts test/conversation-context.test.ts",
     "test:python": "python -m unittest discover -s python/tests -t python",
-    "test:all": "pnpm test && pnpm test:python",
+    "test:all": "pnpm test && pnpm test:context && pnpm test:python",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
